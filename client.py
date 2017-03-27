@@ -3,6 +3,7 @@ from Cryptodome.PublicKey import RSA
 from Cryptodome.Signature import PKCS1_v1_5
 from Cryptodome.Hash import SHA256
 from order import Order
+import parse
 
 # Open SSL Connection
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -21,10 +22,25 @@ print(ssl_sock.getpeername())
 print(pprint.pformat(ssl_sock.getpeercert()))
 print(ssl_sock.cipher())
 
+# input parse pattern
+# "BUY/SELL ### TOKEN FOR ### TOKEN"
+pattern = parse.compile("{operation} {fromAmount:d} {fromToken} FOR {toAmount:d} {toToken}")
+
 # Get user input, send to server
 while True:
     # Read input line, and send as RLP
-    order = Order(sys.stdin.readline())
+    line = sys.stdin.readline()
+    parsed = pattern.parse(line)
+    if (parsed == None):
+        continue
+    order = None
+    if (parsed['operation'] == 'BUY'):
+        order = Order(parsed['fromToken'], parsed['fromAmount'], parsed['toToken'], parsed['toAmount'])
+    elif (parsed['operation'] == 'SELL'):
+        order = Order(parsed['toToken'], parsed['toAmount'], parsed['fromToken'], parsed['fromAmount'])
+    else:
+        continue
+
     rlp_encoded = rlp.encode(order)
     # TODO: Encrypt order with DKG Key
     ssl_sock.send(pickle.dumps(rlp_encoded))

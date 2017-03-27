@@ -11,6 +11,7 @@ sock.listen()
 
 # Load private key for signatures
 key = RSA.import_key(open('certs/server.key', 'rb').read())
+orders = list()
 
 # One thread per client
 def handle_client(sock, addr):
@@ -26,6 +27,7 @@ def handle_client(sock, addr):
         print("RECV: " + str(data))
         order = rlp.decode(data, Order)
         print("DECD: " + str(order))
+        orders.append(order)
         # Hash and sign
         hash = SHA256.new(data)
         resp = pkcs.sign(hash)
