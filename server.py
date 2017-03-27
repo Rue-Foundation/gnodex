@@ -10,11 +10,10 @@ sock.listen()
 
 # Load private key for signatures
 key = RSA.import_key(open('certs/server.key', 'rb').read())
-pkcs = PKCS1_v1_5.new(key)
-
 
 # One thread per client
 def handle_client(sock, addr):
+    pkcs = PKCS1_v1_5.new(key) # TODO: Check if this object is thread-safe
     ssl_sock = ssl.wrap_socket(sock,
                                server_side= True,
                                certfile='certs/server.crt',
