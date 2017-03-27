@@ -1,8 +1,8 @@
-import socket, ssl, pprint, pickle, sys
-from ethereum import utils
+import socket, ssl, pprint, pickle, sys, rlp
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Signature import PKCS1_v1_5
 from Cryptodome.Hash import SHA256
+from order import Order
 
 # Open SSL Connection
 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -24,11 +24,11 @@ print(ssl_sock.cipher())
 # Get user input, send to server
 while True:
     # Read input line, and send as RLP
-    order = sys.stdin.readline()
-    rlp_encoded = utils._encode_hex(order)
+    order = Order(sys.stdin.readline())
+    rlp_encoded = rlp.encode(order)
     # TODO: Encrypt order with DKG Key
     ssl_sock.send(pickle.dumps(rlp_encoded))
-    print("SENT: " + rlp_encoded)
+    print("SENT: " + str(rlp_encoded))
     # Receive signature from state server
     resp = pickle.loads(ssl_sock.recv()) # TODO: Safe object loading
     print("RECV: " + str(resp))

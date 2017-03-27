@@ -1,7 +1,8 @@
-import socket, ssl, pickle, _thread
+import socket, ssl, pickle, _thread, rlp
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Signature import PKCS1_v1_5
 from Cryptodome.Hash import SHA256
+from order import Order
 
 # Start listening for connections
 sock = socket.socket()
@@ -22,9 +23,11 @@ def handle_client(sock, addr):
     # Wait for input, and respond
     while True:
         data = pickle.loads(ssl_sock.recv()) # TODO: Safe object loading
-        print("INPUT: " + data)
+        print("RECV: " + str(data))
+        order = rlp.decode(data, Order)
+        print("DECD: " + str(order))
         # Hash and sign
-        hash = SHA256.new(str(data).encode('utf-8'))
+        hash = SHA256.new(data)
         resp = pkcs.sign(hash)
         ssl_sock.send(pickle.dumps(resp))
         print("RESP: " + str(resp))
