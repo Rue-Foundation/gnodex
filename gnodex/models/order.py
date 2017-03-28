@@ -1,5 +1,5 @@
 import rlp
-from rlp.sedes import raw, CountableList, BigEndianInt
+from rlp.sedes import raw, BigEndianInt
 
 class Order(rlp.Serializable):
     fields = [
@@ -7,10 +7,4 @@ class Order(rlp.Serializable):
         ('buyAmount', BigEndianInt(8)),
         ('sellToken', raw),
         ('sellAmount', BigEndianInt(8)),
-    ]
-
-
-class Batch(rlp.Serializable):
-    fields = [
-        ('orders', CountableList(Order)),
     ]
