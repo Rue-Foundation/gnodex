@@ -3,15 +3,17 @@
 import sys
 from server import master_state_service
 from client import trade_client
+from signer import signer_service
 
 services = {
     'client': trade_client,
     'server': master_state_service,
+    'signer': signer_service,
 }
 
 def print_usage():
     print("Usage: gnodex.py [SERVICE] [OPTIONS...]")
-    print("Services: client server")
+    print("Services: " + ' '.join(sorted(services.keys())))
 
 def main():
     argc = len(sys.argv)
