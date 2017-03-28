@@ -2,7 +2,7 @@ import socket, ssl, pprint, pickle, sys, rlp, os, certs
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Signature import PKCS1_v1_5
 from Cryptodome.Hash import SHA256
-from models import Order
+from models import Order, SignedReceipt
 import parse
 
 def trade_client():
@@ -11,6 +11,8 @@ def trade_client():
 
     # Open SSL Connection
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
     ssl_sock = ssl.wrap_socket(sock,
                                ca_certs=certs.path_to("server.crt"),
                                cert_reqs=ssl.CERT_REQUIRED,
@@ -46,19 +48,29 @@ def trade_client():
         else:
             continue
 
-        rlp_encoded = rlp.encode(order)
+        order_rlp_encoded = rlp.encode(order)
         # TODO: Encrypt order with DKG Key
-        ssl_sock.send(pickle.dumps(rlp_encoded))
-        print("SENT: " + str(rlp_encoded))
+        ssl_sock.send(order_rlp_encoded)
+        print("SENT: " + str(order_rlp_encoded))
         # Receive signature from state server
-        resp = pickle.loads(ssl_sock.recv())  # TODO: Safe object loading
+        resp = rlp.decode(ssl_sock.recv(), SignedReceipt)
         print("RECV: " + str(resp))
+
+        # Verify Signed Order
+        order_hash = SHA256.new(str(order_rlp_encoded).encode('utf-8'))
+        receipt_order_digest = resp.receipt.orderDigest
+        print("DIGEST: " + str(order_hash.digest()))
+        print("GOT: " + str(receipt_order_digest))
+        if (order_hash.digest() != receipt_order_digest):
+            print("INVALID ORDER HASH!")
+            continue
+
         # Verify Signature
-        hash = SHA256.new(str(rlp_encoded).encode('utf-8'))
+        receipt_rlp_encoded = rlp.encode(resp.receipt)
+        receipt_hash = SHA256.new(str(receipt_rlp_encoded).encode('utf-8'))
+
         try:
-            pkcs.verify(hash, resp)
+            pkcs.verify(receipt_hash, resp.signature)
             print("SIGNATURE OK!")
         except ValueError:
-            print("SIGNATURE FAILED!!")
-
-    ssl_sock.close()
+            print("SIGNATURE VERIFICATION FAILED!!")
