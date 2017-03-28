@@ -10,6 +10,7 @@ def master_state_service():
     global orders
     global order_list_lock
     global current_round
+
     # Start listening for connections
     sock = socket.socket()
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -73,6 +74,8 @@ def handle_client(sock, addr):
 
 # Send off current batch to signing services
 def send_batch():
+    global current_round
+
     with order_list_lock:
         print("SEND BATCH!")
         # communicate with signing service

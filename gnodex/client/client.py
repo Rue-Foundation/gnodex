@@ -53,24 +53,25 @@ def trade_client():
         ssl_sock.send(order_rlp_encoded)
         print("SENT: " + str(order_rlp_encoded))
         # Receive signature from state server
-        resp = rlp.decode(ssl_sock.recv(), SignedReceipt)
-        print("RECV: " + str(resp))
+        signed_receipt = rlp.decode(ssl_sock.recv(), SignedReceipt)
+        print("RECV: " + str(signed_receipt))
 
         # Verify Signed Order
         order_hash = SHA256.new(str(order_rlp_encoded).encode('utf-8'))
-        receipt_order_digest = resp.receipt.orderDigest
+        receipt_order_digest = signed_receipt.receipt.orderDigest
         print("DIGEST: " + str(order_hash.digest()))
         print("GOT: " + str(receipt_order_digest))
         if (order_hash.digest() != receipt_order_digest):
             print("INVALID ORDER HASH!")
             continue
+        print("ROUND: " + str(signed_receipt.receipt.round))
 
         # Verify Signature
-        receipt_rlp_encoded = rlp.encode(resp.receipt)
+        receipt_rlp_encoded = rlp.encode(signed_receipt.receipt)
         receipt_hash = SHA256.new(str(receipt_rlp_encoded).encode('utf-8'))
 
         try:
-            pkcs.verify(receipt_hash, resp.signature)
+            pkcs.verify(receipt_hash, signed_receipt.signature)
             print("SIGNATURE OK!")
         except ValueError:
             print("SIGNATURE VERIFICATION FAILED!!")
