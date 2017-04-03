@@ -4,7 +4,7 @@ import rlp
 import threading
 import certs
 from cryptography.exceptions import InvalidSignature
-from models import Order, Receipt, SignedReceipt, Batch, SignedBatch, Signature
+from models import Receipt, SignedReceipt, Batch, SignedBatch, Signature, SignedOrder, Order
 from util import crypto
 
 
@@ -53,7 +53,7 @@ def handle_client(sock, addr):
         # Receive order
         data = ssl_sock.recv()
         print("RECV: " + str(data))
-        order = rlp.decode(data, Order)
+        order = rlp.decode(data, SignedOrder)
         print("DECD: " + str(order))
         receipt_round = None
         with order_list_lock:
@@ -83,13 +83,14 @@ def send_batch():
     with order_list_lock:
         if orders:
             # Sign batch
-            batch = Batch(current_round, orders, '')
+            batch = Batch(current_round, orders, 'XYZ')
             batch_signature = crypto.sign_rlp(private_key, batch)
             signed_batch = SignedBatch(
                 [Signature('master_server', batch_signature)],
                 batch)
+
             signed_batch_rlp = rlp.encode(signed_batch)
-            print("SEND BATCH!")
+            print("SEND BATCH! " + str(signed_batch) + "\n" + str(signed_batch_rlp))
             # Communicate with signing services
             for signer in static_signers:
                 # Open SSL Connection

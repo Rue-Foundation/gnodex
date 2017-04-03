@@ -6,7 +6,7 @@ import rlp
 import certs
 import parse
 from cryptography.exceptions import InvalidSignature
-from models import Order, SignedReceipt
+from models import Order, SignedOrder, SignedReceipt
 from util import crypto
 
 def trade_client():
@@ -22,9 +22,9 @@ def trade_client():
     ssl_sock.connect(('localhost', 31337))
 
     # Load public key for signature verification
-    #cert = RSA.importKey(open(certs.path_to('server.crt'), 'rb').read())
-    #pkcs = PKCS1_v1_5.new(cert)
     public_key = crypto.load_public_cert_key(certs.path_to('server.crt'))
+    # Load private key for signatures
+    private_key = crypto.load_private_key(certs.path_to('server.key'))
 
     # Just print some debugging data
     print(ssl_sock.getpeername())
@@ -51,16 +51,18 @@ def trade_client():
         else:
             continue
 
-        order_rlp_encoded = rlp.encode(order)
+        #order_rlp_encoded = rlp.encode(order)
+        signed_order = SignedOrder(order, crypto.sign_rlp(private_key, order))
+        signed_order_rlp_encoded = rlp.encode(signed_order)
         # TODO: Encrypt order with DKG Key
-        ssl_sock.send(order_rlp_encoded)
-        print("SENT: " + str(order_rlp_encoded))
+        ssl_sock.send(signed_order_rlp_encoded)
+        print("SENT: " + str(signed_order_rlp_encoded))
         # Receive signature from state server
         signed_receipt = rlp.decode(ssl_sock.recv(), SignedReceipt)
         print("RECV: " + str(signed_receipt))
 
         # Verify Signed Order
-        order_hash = crypto.sha256_utf8(order_rlp_encoded)
+        order_hash = crypto.sha256_utf8(signed_order_rlp_encoded)
         receipt_order_digest = signed_receipt.receipt.order_digest
         print("DIGEST: " + str(order_hash))
         print("GOT: " + str(receipt_order_digest))
