@@ -9,15 +9,21 @@ def main():
 
     from . import util, networking, ecdkg
 
-    supparser = argparse.ArgumentParser(prog='gnodex.py')
+    supparser = argparse.ArgumentParser()
     parsers = supparser.add_subparsers()
     parser = parsers.add_parser('ecdkg', description='Distributedly generate some keys yo')
-    parser.add_argument('--host', nargs='?', default='0.0.0.0')
-    parser.add_argument('-p', '--port', type=int, nargs='?', default=8000)
-    parser.add_argument('--log-level', type=int, nargs='?', default=logging.INFO)
-    parser.add_argument('--private-key-file', nargs='?', default='private.key')
-    parser.add_argument('--addresses-file', nargs='?', default='addresses.txt')
-    parser.add_argument('--locations-file', nargs='?', default='locations.txt')
+    parser.add_argument('--host', nargs='?', default='0.0.0.0',
+                        help='Hostname to serve on (default: %(default)s)')
+    parser.add_argument('-p', '--port', type=int, nargs='?', default=8000,
+                        help='Port no. to serve on (default: %(default)s)')
+    parser.add_argument('--log-level', type=int, nargs='?', default=logging.INFO,
+                        help='Logging level (default: %(default)s)')
+    parser.add_argument('--private-key-file', nargs='?', default='private.key',
+                        help='File to load private key from (default: %(default)s)')
+    parser.add_argument('--addresses-file', nargs='?', default='addresses.txt',
+                        help='File to load accepted eth addresses from (default: %(default)s)')
+    parser.add_argument('--locations-file', nargs='?', default='locations.txt',
+                        help='File containing network locations to attempt connecting with (default: %(default)s)')
     args = supparser.parse_args()
 
 
