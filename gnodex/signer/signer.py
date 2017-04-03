@@ -1,13 +1,11 @@
 import socket, ssl, rlp, threading, certs, sys
-from Cryptodome.PublicKey import RSA
-from Cryptodome.Signature import PKCS1_v1_5
-from Cryptodome.Hash import SHA256
+from cryptography.exceptions import InvalidSignature
 from models import Batch, SignedBatch, Signature
-from util import sign_rlp, sha256_utf8
+from util import crypto
 
 
 def signer_service():
-    global key
+    global private_key
     global instance_id
     global last_round
 
@@ -26,7 +24,7 @@ def signer_service():
         return
 
     # Load private key for signatures
-    key = RSA.import_key(open(certs.path_to('server.key'), 'rb').read())
+    private_key = crypto.load_private_key(certs.path_to('server.key'))
 
     # Start listening for connections
     sock = socket.socket()
@@ -47,7 +45,6 @@ def signer_service():
             break
 
 def handle_client(sock, addr):
-    pkcs = PKCS1_v1_5.new(key)  # TODO: Check if this object is thread-safe
     ssl_sock = ssl.wrap_socket(sock,
                                server_side=True,
                                certfile=certs.path_to('server.crt'),
@@ -62,14 +59,15 @@ def handle_client(sock, addr):
     # Verify server signature
     try:
         server_signature = signed_batch.signatures[0].signature
-        pkcs.verify(sha256_utf8(signed_batch.batch), server_signature)
-    except ValueError:
+        public_key = crypto.load_public_cert_key(certs.path_to('server.crt'))
+        crypto.verify(public_key, rlp.encode(signed_batch.batch), server_signature)
+    except InvalidSignature:
         print("COULD NOT VERIFY SERVER SIGNATURE!")
         ssl_sock.send(rlp.encode(Signature(instance_id, '')))
         ssl_sock.close()
         return
     # Sign and return
-    batch_hash_signed = sign_rlp(pkcs, signed_batch.batch)
+    batch_hash_signed = crypto.sign_rlp(private_key, signed_batch.batch)
     signature = Signature('signer_%d' % instance_id, batch_hash_signed)
     ssl_sock.send(rlp.encode(signature))
     ssl_sock.close()

@@ -1,13 +1,11 @@
 import socket, ssl, rlp, threading, certs
-from Cryptodome.PublicKey import RSA
-from Cryptodome.Signature import PKCS1_v1_5
-from Cryptodome.Hash import SHA256
+from cryptography.exceptions import InvalidSignature
 from models import Order, Receipt, SignedReceipt, Batch, SignedBatch, Signature
-from util import sign_rlp, sha256_utf8
+from util import crypto
 
 
 def master_state_service():
-    global key
+    global private_key
     global orders
     global order_list_lock
     global current_round
@@ -19,7 +17,7 @@ def master_state_service():
     sock.listen()
 
     # Load private key for signatures
-    key = RSA.import_key(open(certs.path_to('server.key'), 'rb').read())
+    private_key = crypto.load_private_key(certs.path_to('server.key'))
 
     # Create order buffer
     orders = list()
@@ -40,7 +38,6 @@ def master_state_service():
 
 # One thread per client
 def handle_client(sock, addr):
-    pkcs = PKCS1_v1_5.new(key)  # TODO: Check if this object is thread-safe
     ssl_sock = ssl.wrap_socket(sock,
                                server_side=True,
                                certfile=certs.path_to('server.crt'),
@@ -59,11 +56,11 @@ def handle_client(sock, addr):
             orders.append(order)
             receipt_round = current_round
         # Create Receipt
-        order_hash = sha256_utf8(data)
-        print("DIGEST: " + str(order_hash.digest()))
-        receipt = Receipt(receipt_round, order_hash.digest())
+        order_hash = crypto.sha256_utf8(data)
+        print("DIGEST: " + str(order_hash))
+        receipt = Receipt(receipt_round, order_hash)
         # Create Signed Receipt
-        receipt_hash_signed = sign_rlp(pkcs, receipt)
+        receipt_hash_signed = crypto.sign_rlp(private_key, receipt)
         signed_receipt = SignedReceipt(receipt, receipt_hash_signed)
         ssl_sock.send(rlp.encode(signed_receipt))
         print("RESP: " + str(signed_receipt))
@@ -76,19 +73,17 @@ static_signers = [
 
 # Send off current batch to signing services
 def send_batch():
-    pkcs = PKCS1_v1_5.new(key)  # TODO: Check if this object is thread-safe
     global current_round
 
     with order_list_lock:
         if orders:
             # Sign batch
             batch = Batch(current_round, orders)
-            batch_hash = sha256_utf8(batch)
-            batch_hash_signed = sign_rlp(pkcs, batch)
-            batch_signed = SignedBatch(
-                [Signature('master_server', batch_hash_signed)],
+            batch_signature = crypto.sign_rlp(private_key, batch)
+            signed_batch = SignedBatch(
+                [Signature('master_server', batch_signature)],
                 batch)
-            batch_signed_rlp = rlp.encode(batch_signed)
+            signed_batch_rlp = rlp.encode(signed_batch)
             print("SEND BATCH!")
             # Communicate with signing services
             for signer in static_signers:
@@ -99,7 +94,8 @@ def send_batch():
                 ssl_sock = ssl.wrap_socket(sock,
                                            ca_certs=certs.path_to("server.crt"),
                                            cert_reqs=ssl.CERT_REQUIRED,
-                                           ssl_version=ssl.PROTOCOL_TLSv1_2)
+                                           ssl_version=ssl.PROTOCOL_TLSv1_2,
+                                           ciphers="ECDHE-RSA-AES256-GCM-SHA384")
                 try:
                     ssl_sock.connect(signer)
                 except ConnectionError:
@@ -108,16 +104,18 @@ def send_batch():
 
                 with ssl_sock:
                     print("CONNECTED TO SIGNER")
-                    ssl_sock.send(batch_signed_rlp)
+                    ssl_sock.send(signed_batch_rlp)
                     response = ssl_sock.recv()
                     signature = rlp.decode(response, Signature)
                     print("ID: " + str(signature.owner_id))
                     print("SIG: " + str(signature.signature))
 
+                    public_key = crypto.load_public_cert_key(certs.path_to('server.crt'))
+
                     try:
-                        pkcs.verify(batch_hash, signature.signature)
+                        crypto.verify(public_key, rlp.encode(batch), signature.signature)
                         print("SIGNATURE OK!")
-                    except ValueError:
+                    except InvalidSignature:
                         print("SIGNATURE VERIFICATION FAILED!!")
             orders.clear()
         current_round += 1

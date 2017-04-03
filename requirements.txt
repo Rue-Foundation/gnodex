@@ -1,3 +1,3 @@
 parse
-pycryptodome
-
+cryptography
+rlp

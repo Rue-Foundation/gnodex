@@ -1,9 +1,7 @@
 import socket, ssl, pprint, sys, rlp, certs, parse
-from Cryptodome.PublicKey import RSA
-from Cryptodome.Signature import PKCS1_v1_5
-from Cryptodome.Hash import SHA256
+from cryptography.exceptions import InvalidSignature
 from models import Order, SignedReceipt
-from util import sign_rlp, sha256_utf8
+from util import crypto
 
 def trade_client():
     # Open SSL Connection
@@ -13,12 +11,14 @@ def trade_client():
     ssl_sock = ssl.wrap_socket(sock,
                                ca_certs=certs.path_to("server.crt"),
                                cert_reqs=ssl.CERT_REQUIRED,
-                               ssl_version=ssl.PROTOCOL_TLSv1_2)
+                               ssl_version=ssl.PROTOCOL_TLSv1_2,
+                               ciphers = "ECDHE-RSA-AES256-GCM-SHA384")
     ssl_sock.connect(('localhost', 31337))
 
     # Load public key for signature verification
-    cert = RSA.importKey(open(certs.path_to('server.crt'), 'rb').read())
-    pkcs = PKCS1_v1_5.new(cert)
+    #cert = RSA.importKey(open(certs.path_to('server.crt'), 'rb').read())
+    #pkcs = PKCS1_v1_5.new(cert)
+    public_key = crypto.load_public_cert_key(certs.path_to('server.crt'))
 
     # Just print some debugging data
     print(ssl_sock.getpeername())
@@ -54,21 +54,20 @@ def trade_client():
         print("RECV: " + str(signed_receipt))
 
         # Verify Signed Order
-        order_hash = sha256_utf8(order_rlp_encoded)
+        order_hash = crypto.sha256_utf8(order_rlp_encoded)
         receipt_order_digest = signed_receipt.receipt.orderDigest
-        print("DIGEST: " + str(order_hash.digest()))
+        print("DIGEST: " + str(order_hash))
         print("GOT: " + str(receipt_order_digest))
-        if (order_hash.digest() != receipt_order_digest):
+        if (order_hash != receipt_order_digest):
             print("INVALID ORDER HASH!")
             continue
         print("ROUND: " + str(signed_receipt.receipt.round))
 
         # Verify Signature
         receipt_rlp_encoded = rlp.encode(signed_receipt.receipt)
-        receipt_hash = sha256_utf8(receipt_rlp_encoded)
 
         try:
-            pkcs.verify(receipt_hash, signed_receipt.signature)
+            crypto.verify(public_key, receipt_rlp_encoded, signed_receipt.signature)
             print("SIGNATURE OK!")
-        except ValueError:
+        except InvalidSignature:
             print("SIGNATURE VERIFICATION FAILED!!")
