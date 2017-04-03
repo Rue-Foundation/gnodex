@@ -33,7 +33,7 @@ def trade_client():
 
     # input parse pattern
     # "BUY/SELL ### TOKEN FOR ### TOKEN"
-    pattern = parse.compile("{operation} {fromAmount:d} {fromToken} FOR {toAmount:d} {toToken}")
+    pattern = parse.compile("{operation} {from_amount:d} {from_token} FOR {to_amount:d} {to_token}")
 
     # Get user input, send to server
     print("Gnodex Trade Client Started")
@@ -45,9 +45,9 @@ def trade_client():
             continue
         order = None
         if (parsed['operation'] == 'BUY'):
-            order = Order(parsed['fromToken'], parsed['fromAmount'], parsed['toToken'], parsed['toAmount'])
+            order = Order(parsed['from_token'], parsed['from_amount'], parsed['to_token'], parsed['to_amount'])
         elif (parsed['operation'] == 'SELL'):
-            order = Order(parsed['toToken'], parsed['toAmount'], parsed['fromToken'], parsed['fromAmount'])
+            order = Order(parsed['to_token'], parsed['to_amount'], parsed['from_token'], parsed['from_amount'])
         else:
             continue
 
@@ -61,7 +61,7 @@ def trade_client():
 
         # Verify Signed Order
         order_hash = crypto.sha256_utf8(order_rlp_encoded)
-        receipt_order_digest = signed_receipt.receipt.orderDigest
+        receipt_order_digest = signed_receipt.receipt.order_digest
         print("DIGEST: " + str(order_hash))
         print("GOT: " + str(receipt_order_digest))
         if (order_hash != receipt_order_digest):

@@ -83,7 +83,7 @@ def send_batch():
     with order_list_lock:
         if orders:
             # Sign batch
-            batch = Batch(current_round, orders)
+            batch = Batch(current_round, orders, '')
             batch_signature = crypto.sign_rlp(private_key, batch)
             signed_batch = SignedBatch(
                 [Signature('master_server', batch_signature)],
