@@ -1,4 +1,4 @@
-import socket, ssl, rlp, threading, certs, pprint
+import socket, ssl, rlp, threading, certs
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Signature import PKCS1_v1_5
 from Cryptodome.Hash import SHA256
