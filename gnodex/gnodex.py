@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 
+import argparse
 import sys
+
 from server import master_state_service
 from client import trade_client
 from signer import signer_service
+
+import ecdkg
 
 services = {
     'client': trade_client,
     'server': master_state_service,
     'signer': signer_service,
+    'ecdkg': ecdkg.main,
 }
 
 
