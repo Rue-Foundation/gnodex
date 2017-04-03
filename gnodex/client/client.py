@@ -1,4 +1,10 @@
-import socket, ssl, pprint, sys, rlp, certs, parse
+import socket
+import ssl
+import pprint
+import sys
+import rlp
+import certs
+import parse
 from cryptography.exceptions import InvalidSignature
 from models import Order, SignedReceipt
 from util import crypto

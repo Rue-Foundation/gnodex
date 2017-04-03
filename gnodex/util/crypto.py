@@ -8,8 +8,8 @@ from cryptography import x509
 def load_public_cert_key(cert_file_path):
     with open(cert_file_path, 'rb') as cert_file:
         cert = x509.load_pem_x509_certificate(
-            data= cert_file.read(),
-            backend= default_backend())
+            data=cert_file.read(),
+            backend=default_backend())
         return cert.public_key()
 
 

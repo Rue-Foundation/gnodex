@@ -1,4 +1,8 @@
-import socket, ssl, rlp, threading, certs
+import socket
+import ssl
+import rlp
+import threading
+import certs
 from cryptography.exceptions import InvalidSignature
 from models import Order, Receipt, SignedReceipt, Batch, SignedBatch, Signature
 from util import crypto
@@ -70,6 +74,7 @@ static_signers = [
     ('localhost', 31339),
     ('localhost', 31340),
 ]
+
 
 # Send off current batch to signing services
 def send_batch():

@@ -1,4 +1,9 @@
-import socket, ssl, rlp, threading, certs, sys
+import socket
+import ssl
+import rlp
+import threading
+import certs
+import sys
 from cryptography.exceptions import InvalidSignature
 from models import Batch, SignedBatch, Signature
 from util import crypto
@@ -43,6 +48,7 @@ def signer_service():
             print("Signing Service %d Exit." % instance_id)
             # TODO: Kill other running threads
             break
+
 
 def handle_client(sock, addr):
     ssl_sock = ssl.wrap_socket(sock,
