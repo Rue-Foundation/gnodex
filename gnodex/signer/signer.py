@@ -2,8 +2,8 @@ import socket, ssl, rlp, threading, certs, sys
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Signature import PKCS1_v1_5
 from Cryptodome.Hash import SHA256
-from models import Batch
-
+from models import Batch, SignedBatch, Signature
+from util import sign_rlp, sha256_utf8
 
 
 def signer_service():
@@ -54,10 +54,22 @@ def handle_client(sock, addr):
                                keyfile=certs.path_to('server.key'),
                                ssl_version=ssl.PROTOCOL_TLSv1_2,
                                ciphers="ECDHE-RSA-AES256-GCM-SHA384")
-    # Wait for input, and respond
-    while True:
-        # Receive batch
-        data = ssl_sock.recv()
-        print("RECV: " + str(data))
-        order = rlp.decode(data, Batch)
-        print("DECD: " + str(order))
+    # Receive batch
+    data = ssl_sock.recv()
+    print("RECV: " + str(data))
+    signed_batch = rlp.decode(data, SignedBatch)
+    print("DECD: " + str(signed_batch))
+    # Verify server signature
+    try:
+        server_signature = signed_batch.signatures[0].signature
+        pkcs.verify(sha256_utf8(signed_batch.batch), server_signature)
+    except ValueError:
+        print("COULD NOT VERIFY SERVER SIGNATURE!")
+        ssl_sock.send(rlp.encode(Signature(instance_id, '')))
+        ssl_sock.close()
+        return
+    # Sign and return
+    batch_hash_signed = sign_rlp(pkcs, signed_batch.batch)
+    signature = Signature('signer_%d' % instance_id, batch_hash_signed)
+    ssl_sock.send(rlp.encode(signature))
+    ssl_sock.close()

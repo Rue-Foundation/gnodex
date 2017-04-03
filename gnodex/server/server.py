@@ -27,7 +27,7 @@ def master_state_service():
     current_round = 0
 
     # Create order batch submission timer
-    t = threading.Timer(interval=15.0, function=send_batch)
+    t = threading.Timer(interval=5.0, function=send_batch)
     t.start()
 
     # Accept connections and start handling them in own thread
@@ -69,9 +69,9 @@ def handle_client(sock, addr):
         print("RESP: " + str(signed_receipt))
 
 static_signers = [
-    ('localhost', 1338),
-    ('localhost', 1339),
-    ('localhost', 1340),
+    ('localhost', 31338),
+    ('localhost', 31339),
+    ('localhost', 31340),
 ]
 
 # Send off current batch to signing services
@@ -80,15 +80,47 @@ def send_batch():
     global current_round
 
     with order_list_lock:
-        # Sign batch
-        batch = Batch(current_round, orders)
-        batch_hash_signed = sign_rlp(pkcs, batch)
-        batch_signature = Signature('master_server', batch_hash_signed)
-        batch_signed = SignedBatch([batch_signature], batch)
-        batch_signed_rlp = rlp.encode(batch_signed)
-        print("SEND BATCH!")
-        # communicate with signing services
+        if orders:
+            # Sign batch
+            batch = Batch(current_round, orders)
+            batch_hash = sha256_utf8(batch)
+            batch_hash_signed = sign_rlp(pkcs, batch)
+            batch_signed = SignedBatch(
+                [Signature('master_server', batch_hash_signed)],
+                batch)
+            batch_signed_rlp = rlp.encode(batch_signed)
+            print("SEND BATCH!")
+            # Communicate with signing services
+            for signer in static_signers:
+                # Open SSL Connection
+                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+                ssl_sock = ssl.wrap_socket(sock,
+                                           ca_certs=certs.path_to("server.crt"),
+                                           cert_reqs=ssl.CERT_REQUIRED,
+                                           ssl_version=ssl.PROTOCOL_TLSv1_2)
+                try:
+                    ssl_sock.connect(signer)
+                except ConnectionError:
+                    print("CONNECTION FAILED")
+                    continue
+
+                with ssl_sock:
+                    print("CONNECTED TO SIGNER")
+                    ssl_sock.send(batch_signed_rlp)
+                    response = ssl_sock.recv()
+                    signature = rlp.decode(response, Signature)
+                    print("ID: " + str(signature.owner_id))
+                    print("SIG: " + str(signature.signature))
+
+                    try:
+                        pkcs.verify(batch_hash, signature.signature)
+                        print("SIGNATURE OK!")
+                    except ValueError:
+                        print("SIGNATURE VERIFICATION FAILED!!")
+            orders.clear()
         current_round += 1
     # Create order batch submission timer
-    t = threading.Timer(interval=15.0, function=send_batch)
+    t = threading.Timer(interval=5.0, function=send_batch)
     t.start()
