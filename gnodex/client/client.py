@@ -1,9 +1,9 @@
-import socket, ssl, pprint, pickle, sys, rlp, os, certs
+import socket, ssl, pprint, sys, rlp, certs, parse
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Signature import PKCS1_v1_5
 from Cryptodome.Hash import SHA256
 from models import Order, SignedReceipt
-import parse
+from util import sign_rlp, sha256_utf8
 
 def trade_client():
     # Open SSL Connection
@@ -54,7 +54,7 @@ def trade_client():
         print("RECV: " + str(signed_receipt))
 
         # Verify Signed Order
-        order_hash = SHA256.new(str(order_rlp_encoded).encode('utf-8'))
+        order_hash = sha256_utf8(order_rlp_encoded)
         receipt_order_digest = signed_receipt.receipt.orderDigest
         print("DIGEST: " + str(order_hash.digest()))
         print("GOT: " + str(receipt_order_digest))
@@ -65,7 +65,7 @@ def trade_client():
 
         # Verify Signature
         receipt_rlp_encoded = rlp.encode(signed_receipt.receipt)
-        receipt_hash = SHA256.new(str(receipt_rlp_encoded).encode('utf-8'))
+        receipt_hash = sha256_utf8(receipt_rlp_encoded)
 
         try:
             pkcs.verify(receipt_hash, signed_receipt.signature)

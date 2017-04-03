@@ -2,7 +2,8 @@ import socket, ssl, rlp, threading, certs
 from Cryptodome.PublicKey import RSA
 from Cryptodome.Signature import PKCS1_v1_5
 from Cryptodome.Hash import SHA256
-from models import Order, Receipt, SignedReceipt
+from models import Order, Receipt, SignedReceipt, Batch, SignedBatch, Signature
+from util import sign_rlp, sha256_utf8
 
 
 def master_state_service():
@@ -26,7 +27,7 @@ def master_state_service():
     current_round = 0
 
     # Create order batch submission timer
-    t = threading.Timer(interval=5.0, function=send_batch)
+    t = threading.Timer(interval=15.0, function=send_batch)
     t.start()
 
     # Accept connections and start handling them in own thread
@@ -53,33 +54,41 @@ def handle_client(sock, addr):
         print("RECV: " + str(data))
         order = rlp.decode(data, Order)
         print("DECD: " + str(order))
-        receipt_round = -1
+        receipt_round = None
         with order_list_lock:
             orders.append(order)
             receipt_round = current_round
         # Create Receipt
-        order_hash = SHA256.new(str(data).encode('UTF-8'))
+        order_hash = sha256_utf8(data)
         print("DIGEST: " + str(order_hash.digest()))
         receipt = Receipt(receipt_round, order_hash.digest())
-        # Sign Receipt
-        receipt_rlp_encoded = rlp.encode(receipt)
-        receipt_hash = SHA256.new(str(receipt_rlp_encoded).encode('UTF-8'))
-        receipt_signature = pkcs.sign(receipt_hash)
         # Create Signed Receipt
-        signed_receipt = SignedReceipt(receipt, receipt_signature)
-        signed_receipt_rlp_encoded = rlp.encode(signed_receipt)
-        ssl_sock.send(signed_receipt_rlp_encoded)
+        receipt_hash_signed = sign_rlp(pkcs, receipt)
+        signed_receipt = SignedReceipt(receipt, receipt_hash_signed)
+        ssl_sock.send(rlp.encode(signed_receipt))
         print("RESP: " + str(signed_receipt))
 
+static_signers = [
+    ('localhost', 1338),
+    ('localhost', 1339),
+    ('localhost', 1340),
+]
 
 # Send off current batch to signing services
 def send_batch():
+    pkcs = PKCS1_v1_5.new(key)  # TODO: Check if this object is thread-safe
     global current_round
 
     with order_list_lock:
+        # Sign batch
+        batch = Batch(current_round, orders)
+        batch_hash_signed = sign_rlp(pkcs, batch)
+        batch_signature = Signature('master_server', batch_hash_signed)
+        batch_signed = SignedBatch([batch_signature], batch)
+        batch_signed_rlp = rlp.encode(batch_signed)
         print("SEND BATCH!")
-        # communicate with signing service
+        # communicate with signing services
         current_round += 1
     # Create order batch submission timer
-    t = threading.Timer(interval=5.0, function=send_batch)
+    t = threading.Timer(interval=15.0, function=send_batch)
     t.start()
