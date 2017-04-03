@@ -5,7 +5,7 @@ import threading
 import certs
 from cryptography.exceptions import InvalidSignature
 from models import Receipt, SignedReceipt, Batch, SignedBatch, Signature, SignedOrder, Order
-from util import crypto
+from util import crypto, ssl_context
 
 
 def master_state_service():
@@ -42,12 +42,8 @@ def master_state_service():
 
 # One thread per client
 def handle_client(sock, addr):
-    ssl_sock = ssl.wrap_socket(sock,
-                               server_side=True,
-                               certfile=certs.path_to('server.crt'),
-                               keyfile=certs.path_to('server.key'),
-                               ssl_version=ssl.PROTOCOL_TLSv1_2,
-                               ciphers="ECDHE-RSA-AES256-GCM-SHA384")
+    ssl_sock = ssl_context.wrap_server_socket(sock, certs.path_to('server.crt'), certs.path_to('server.key'))
+
     # Wait for input, and respond
     while True:
         # Receive order
@@ -97,11 +93,8 @@ def send_batch():
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-                ssl_sock = ssl.wrap_socket(sock,
-                                           ca_certs=certs.path_to("server.crt"),
-                                           cert_reqs=ssl.CERT_REQUIRED,
-                                           ssl_version=ssl.PROTOCOL_TLSv1_2,
-                                           ciphers="ECDHE-RSA-AES256-GCM-SHA384")
+                ssl_sock = ssl_context.wrap_client_socket(sock, certs.path_to("server.crt"))
+
                 try:
                     ssl_sock.connect(signer)
                 except ConnectionError:

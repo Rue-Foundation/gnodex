@@ -1,5 +1,4 @@
 import socket
-import ssl
 import pprint
 import sys
 import rlp
@@ -7,18 +6,15 @@ import certs
 import parse
 from cryptography.exceptions import InvalidSignature
 from models import Order, SignedOrder, SignedReceipt
-from util import crypto
+from util import crypto, ssl_context
 
 def trade_client():
     # Open SSL Connection
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
 
-    ssl_sock = ssl.wrap_socket(sock,
-                               ca_certs=certs.path_to("server.crt"),
-                               cert_reqs=ssl.CERT_REQUIRED,
-                               ssl_version=ssl.PROTOCOL_TLSv1_2,
-                               ciphers = "ECDHE-RSA-AES256-GCM-SHA384")
+    ssl_sock = ssl_context.wrap_client_socket(sock, certs.path_to('server.crt'))
+
     ssl_sock.connect(('localhost', 31337))
 
     # Load public key for signature verification

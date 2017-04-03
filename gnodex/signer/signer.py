@@ -1,12 +1,11 @@
 import socket
-import ssl
 import rlp
 import threading
 import certs
 import sys
 from cryptography.exceptions import InvalidSignature
 from models import Batch, SignedBatch, Signature
-from util import crypto
+from util import crypto, ssl_context
 
 
 def signer_service():
@@ -51,12 +50,8 @@ def signer_service():
 
 
 def handle_client(sock, addr):
-    ssl_sock = ssl.wrap_socket(sock,
-                               server_side=True,
-                               certfile=certs.path_to('server.crt'),
-                               keyfile=certs.path_to('server.key'),
-                               ssl_version=ssl.PROTOCOL_TLSv1_2,
-                               ciphers="ECDHE-RSA-AES256-GCM-SHA384")
+    ssl_sock = ssl_context.wrap_server_socket(sock, certs.path_to('server.crt'), certs.path_to('server.key'))
+
     # Receive batch
     data = ssl_sock.recv()
     print("RECV: " + str(data))
