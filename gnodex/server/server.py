@@ -8,7 +8,7 @@ from models import Receipt, SignedReceipt, Batch, SignedBatch, Signature, Signed
 from util import crypto, ssl_context
 
 
-def master_state_service():
+def master_state_service(args):
     global private_key
     global orders
     global order_list_lock

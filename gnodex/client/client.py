@@ -8,7 +8,7 @@ from cryptography.exceptions import InvalidSignature
 from models import Order, SignedOrder, SignedReceipt
 from util import crypto, ssl_context
 
-def trade_client():
+def trade_client(args):
     # Open SSL Connection
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

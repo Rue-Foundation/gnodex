@@ -1,42 +1,27 @@
 #!/usr/bin/env python3
 
 import argparse
+import importlib
 import sys
 
-from server import master_state_service
-from client import trade_client
-from signer import signer_service
-
-import ecdkg
-
-services = {
-    'client': trade_client,
-    'server': master_state_service,
-    'signer': signer_service,
-    'ecdkg': ecdkg.main,
-}
-
-
-def print_usage():
-    print("Usage: gnodex.py [SERVICE] [OPTIONS...]")
-    print("Services: " + ' '.join(sorted(services.keys())))
+SERVICES = ('client', 'ecdkg', 'server', 'signer')
 
 
 def main():
-    argc = len(sys.argv)
-    if argc < 2:
-        print("Please specify a service to run.")
-        print_usage()
-        return
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers()
 
-    service = sys.argv[1]
-    if service in services.keys():
-        entry_point = services[service]
-        entry_point()
+    for mod_name in SERVICES:
+        mod = importlib.import_module(mod_name, package='.')
+        subparser = subparsers.add_parser(mod.__name__, description=mod.__doc__)
+        mod.setup_argparser(subparser)
+
+    args = parser.parse_args()
+
+    if hasattr(args, 'func'):
+        args.func(args)
     else:
-        print("Unknown service specified: " + service)
-        print_usage()
-        return
+        parser.print_help()
 
 
 if __name__ == "__main__":

@@ -1,17 +1,18 @@
-def main():
-    import argparse
-    import asyncio
-    import logging
-    import signal
-    import sys
+"""Distributedly generate some keys yo"""
 
-    import bitcoin
 
-    from . import util, networking, ecdkg
+import argparse
+import asyncio
+import logging
+import signal
+import sys
 
-    supparser = argparse.ArgumentParser()
-    parsers = supparser.add_subparsers()
-    parser = parsers.add_parser('ecdkg', description='Distributedly generate some keys yo')
+import bitcoin
+
+from . import util, networking, ecdkg
+
+
+def setup_argparser(parser):
     parser.add_argument('--host', nargs='?', default='0.0.0.0',
                         help='Hostname to serve on (default: %(default)s)')
     parser.add_argument('-p', '--port', type=int, nargs='?', default=8000,
@@ -24,9 +25,10 @@ def main():
                         help='File to load accepted eth addresses from (default: %(default)s)')
     parser.add_argument('--locations-file', nargs='?', default='locations.txt',
                         help='File containing network locations to attempt connecting with (default: %(default)s)')
-    args = supparser.parse_args()
+    parser.set_defaults(func=main)
 
 
+def main(args):
     logging.basicConfig(level=args.log_level, format='%(message)s')
 
     ecdkg.private_key = util.get_or_generate_private_value(args.private_key_file)
