@@ -8,20 +8,14 @@ from models import SignedBatch, Signature
 from util import crypto, ssl_context
 from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg
 
-def signer_service():
+def signer_service(args):
     global private_key
     global instance_id
     global last_round
 
     last_round = -1
 
-    # Find Signer instance
-    if len(sys.argv) < 3:
-        print("Please specify which signer instance is running.")
-        print("OPTIONS: signer_instance_number")
-        return
-
-    instance_id = int(sys.argv[2])
+    instance_id = args.id
 
     if instance_id < 0:
         print("Instance ID must be non-negative!")

@@ -9,7 +9,7 @@ from models import Order, SignedOrder, SignedReceipt
 from util import crypto, ssl_context
 from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg
 
-def trade_client():
+def trade_client(args):
     # Open SSL Connection
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

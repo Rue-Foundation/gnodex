@@ -8,7 +8,7 @@ from util import crypto, ssl_context
 from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg
 
 
-def master_state_service():
+def master_state_service(args):
     global private_key
     global orders
     global order_list_lock
