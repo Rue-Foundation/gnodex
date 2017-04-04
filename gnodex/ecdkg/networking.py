@@ -8,6 +8,8 @@ import os
 import ssl
 import tempfile
 
+from http.server import BaseHTTPRequestHandler
+
 import bitcoin
 
 from cryptography import x509
@@ -106,37 +108,40 @@ async def server(host: str, port: int, *,
     async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         logging.info('(s) new connection...')
 
-        nonce = util.random.randrange(2**256)
-        noncebytes = nonce.to_bytes(32, byteorder='big')
-        logging.debug('(s) sending nonce {}'.format(hex(nonce)))
-        writer.write(nonce.to_bytes(32, byteorder='big'))
+        protocol_indicator = await reader.read(4)
 
-        rsv_bytes = await asyncio.wait_for(reader.read(65), timeout)
-        r, s, v = (int.from_bytes(b, byteorder='big') for b in (rsv_bytes[0:32], rsv_bytes[32:64], rsv_bytes[64:]))
-        logging.debug('(s) received signature rsv {}'.format(tuple(map(hex, (r, s, v)))))
+        if protocol_indicator == b'DKG ':
+            nonce = util.random.randrange(2**256)
+            noncebytes = nonce.to_bytes(32, byteorder='big')
+            logging.debug('(s) sending nonce {}'.format(hex(nonce)))
+            writer.write(nonce.to_bytes(32, byteorder='big'))
 
-        try:
-            clipubkey = bitcoin.ecdsa_raw_recover(noncebytes, (v, r, s))
-        except ValueError:
-            clipubkey = False # I would have used None here but pybitcointools uses False for malformed signatures
+            rsv_bytes = await asyncio.wait_for(reader.read(65), timeout)
+            r, s, v = (int.from_bytes(b, byteorder='big') for b in (rsv_bytes[0:32], rsv_bytes[32:64], rsv_bytes[64:]))
+            logging.debug('(s) received signature rsv {}'.format(tuple(map(hex, (r, s, v)))))
 
-        if clipubkey:
-            cliethaddr = util.curve_point_to_eth_address(clipubkey)
-            logging.debug('(s) got client address: {}'.format(hex(cliethaddr)))
-        else:
-            cliethaddr = None
+            try:
+                clipubkey = bitcoin.ecdsa_raw_recover(noncebytes, (v, r, s))
+            except ValueError:
+                clipubkey = False # I would have used None here but pybitcointools uses False for malformed signatures
 
-        if cliethaddr is None:
-            logging.debug('(s) could not verify client signature; closing connection')
-            writer.close()
-            return
+            if clipubkey:
+                cliethaddr = util.curve_point_to_eth_address(clipubkey)
+                logging.debug('(s) got client address: {}'.format(hex(cliethaddr)))
+            else:
+                cliethaddr = None
 
-        if cliethaddr not in ecdkg.accepted_addresses:
-            logging.info('(s) client address {} not accepted'.format(hex(cliethaddr)))
-            writer.close()
-            return
+            if cliethaddr is None:
+                logging.debug('(s) could not verify client signature; closing connection')
+                writer.close()
+                return
 
-        await establish_channel(cliethaddr, reader, writer)
+            if cliethaddr not in ecdkg.accepted_addresses:
+                logging.info('(s) client address {} not accepted'.format(hex(cliethaddr)))
+                writer.close()
+                return
+
+            await establish_channel(cliethaddr, reader, writer)
 
     logging.info('(s) serving on {}:{}'.format(host, port))
     await asyncio.start_server(handle_connection,
@@ -174,6 +179,8 @@ async def attempt_to_establish_channel(host: str, port: int, *,
         logging.info('(c) server eth address {} not accepted'.format(hex(srvethaddr)))
         writer.close()
         return
+
+    writer.write(b'DKG ')
 
     noncebytes = await asyncio.wait_for(reader.read(32), timeout)
     nonce = int.from_bytes(noncebytes, byteorder='big')
