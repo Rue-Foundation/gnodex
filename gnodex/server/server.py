@@ -1,11 +1,11 @@
 import socket
-import ssl
 import rlp
 import threading
 import certs
 from cryptography.exceptions import InvalidSignature
 from models import Receipt, SignedReceipt, Batch, SignedBatch, Signature, SignedOrder, Order
 from util import crypto, ssl_context
+from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg
 
 
 def master_state_service():
@@ -47,7 +47,7 @@ def handle_client(sock, addr):
     # Wait for input, and respond
     while True:
         # Receive order
-        data = ssl_sock.recv()
+        data = recv_ssl_msg(ssl_sock)
         print("RECV: " + str(data))
         order = rlp.decode(data, SignedOrder)
         print("DECD: " + str(order))
@@ -62,7 +62,7 @@ def handle_client(sock, addr):
         # Create Signed Receipt
         receipt_hash_signed = crypto.sign_rlp(private_key, receipt)
         signed_receipt = SignedReceipt(receipt, receipt_hash_signed)
-        ssl_sock.send(rlp.encode(signed_receipt))
+        send_ssl_msg(ssl_sock, rlp.encode(signed_receipt))
         print("RESP: " + str(signed_receipt))
 
 static_signers = [
@@ -103,8 +103,8 @@ def send_batch():
 
                 with ssl_sock:
                     print("CONNECTED TO SIGNER")
-                    ssl_sock.send(signed_batch_rlp)
-                    response = ssl_sock.recv()
+                    send_ssl_msg(ssl_sock, signed_batch_rlp)
+                    response = recv_ssl_msg(ssl_sock)
                     signature = rlp.decode(response, Signature)
                     print("ID: " + str(signature.owner_id))
                     print("SIG: " + str(signature.signature))
