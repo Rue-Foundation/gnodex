@@ -7,16 +7,11 @@ import parse
 from cryptography.exceptions import InvalidSignature
 from models import Order, SignedOrder, SignedReceipt
 from util import crypto, ssl_context
-from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg
+from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg, ssl_connect
 
 def trade_client(args):
     # Open SSL Connection
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-    ssl_sock = ssl_context.wrap_client_socket(sock, certs.path_to('server.crt'))
-
-    ssl_sock.connect(('localhost', 31337))
+    ssl_sock = ssl_connect(('localhost', 31337), certs.path_to('server.crt'))
 
     # Load public key for signature verification
     public_key = crypto.load_public_cert_key(certs.path_to('server.crt'))
@@ -48,7 +43,6 @@ def trade_client(args):
         else:
             continue
 
-        #order_rlp_encoded = rlp.encode(order)
         signed_order = SignedOrder(order, crypto.sign_rlp(private_key, order))
         signed_order_rlp_encoded = rlp.encode(signed_order)
         # TODO: Encrypt order with DKG Key
@@ -72,3 +66,6 @@ def trade_client(args):
             print("SIGNATURE OK!")
         except InvalidSignature:
             print("SIGNATURE VERIFICATION FAILED!!")
+
+def request_membership_verification(receipt):
+    pass

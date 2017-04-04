@@ -5,7 +5,7 @@ import certs
 from cryptography.exceptions import InvalidSignature
 from models import Receipt, SignedReceipt, Batch, SignedBatch, Signature, SignedOrder, BatchCommitment
 from util import crypto, ssl_context, merkle_helper
-from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg
+from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg, ssl_connect
 
 
 def master_state_service(args):
@@ -91,14 +91,8 @@ def send_batch():
             print("SENDING BATCH! ")
             # Communicate with signing services
             for signer in static_signers:
-                # Open SSL Connection
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-
-                ssl_sock = ssl_context.wrap_client_socket(sock, certs.path_to("server.crt"))
-
                 try:
-                    ssl_sock.connect(signer)
+                    ssl_sock = ssl_connect(signer, certs.path_to('server.crt'))
                 except ConnectionError:
                     print("CONNECTION FAILED")
                     continue

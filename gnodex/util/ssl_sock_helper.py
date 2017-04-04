@@ -5,6 +5,8 @@ implemented in sockets have no SSLSocket counterpart, such as recvmsg().
 
 import ssl
 import base64
+import socket
+from . import ssl_context
 
 socket_buffer_dict = {}
 
@@ -30,3 +32,15 @@ def recv_ssl_msg(sock: ssl.SSLSocket, delimiter=b'\n'):
 def send_ssl_msg(sock: ssl.SSLSocket, msg, delimiter='\n'):
     data = base64.standard_b64encode(msg) + delimiter.encode('UTF-8')
     sock.send(data)
+
+
+def ssl_connect(addr, cert):
+    # Open SSL Connection
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+
+    ssl_sock = ssl_context.wrap_client_socket(sock, cert)
+
+    ssl_sock.connect(addr)
+
+    return ssl_sock
