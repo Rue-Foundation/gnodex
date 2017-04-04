@@ -67,5 +67,5 @@ def main(args):
         loop.run_forever()
     except SystemExit:
         loop.run_until_complete(loop.shutdown_asyncgens())
-        loop.stop()
+        loop.close()
         logging.info('Goodbye')

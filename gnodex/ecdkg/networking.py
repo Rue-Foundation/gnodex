@@ -1,6 +1,7 @@
 import asyncio
 import collections
 import datetime
+import fileinput
 import json
 import logging
 import os
@@ -87,7 +88,7 @@ async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writ
 
     try:
         async for obj in json_lines_with_timeout(reader):
-            logging.info('received message {} from {}'.format(obj, eth_address))
+            logging.info('received message {} from {}'.format(obj, hex(eth_address)))
     except asyncio.TimeoutError:
         logging.warn('channel for {} timed out'.format(hex(eth_address)))
         del channels[eth_address]
@@ -99,53 +100,48 @@ async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writ
 ################################################################################
 
 async def server(host: str, port: int, *,
+                 timeout: 'seconds' = DEFAULT_TIMEOUT,
                  loop: asyncio.AbstractEventLoop):
+
+    async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        logging.info('(s) new connection...')
+
+        nonce = util.random.randrange(2**256)
+        noncebytes = nonce.to_bytes(32, byteorder='big')
+        logging.debug('(s) sending nonce {}'.format(hex(nonce)))
+        writer.write(nonce.to_bytes(32, byteorder='big'))
+
+        rsv_bytes = await asyncio.wait_for(reader.read(65), timeout)
+        r, s, v = (int.from_bytes(b, byteorder='big') for b in (rsv_bytes[0:32], rsv_bytes[32:64], rsv_bytes[64:]))
+        logging.debug('(s) received signature rsv {}'.format(tuple(map(hex, (r, s, v)))))
+
+        try:
+            clipubkey = bitcoin.ecdsa_raw_recover(noncebytes, (v, r, s))
+        except ValueError:
+            clipubkey = False # I would have used None here but pybitcointools uses False for malformed signatures
+
+        if clipubkey:
+            cliethaddr = util.curve_point_to_eth_address(clipubkey)
+            logging.debug('(s) got client address: {}'.format(hex(cliethaddr)))
+        else:
+            cliethaddr = None
+
+        if cliethaddr is None:
+            logging.debug('(s) could not verify client signature; closing connection')
+            writer.close()
+            return
+
+        if cliethaddr not in ecdkg.accepted_addresses:
+            logging.info('(s) client address {} not accepted'.format(hex(cliethaddr)))
+            writer.close()
+            return
+
+        await establish_channel(cliethaddr, reader, writer)
+
     logging.info('(s) serving on {}:{}'.format(host, port))
-    async def thing():
-        await asyncio.sleep(5.0)
-        for addr, info in channels.items():
-            info.writer.write(b'{"foo": "bar"}\n')
-
-    loop.create_task(thing())
-
     await asyncio.start_server(handle_connection,
                                host, port, ssl=ssl_context, loop=loop)
 
-
-async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter, timeout: 'seconds' = DEFAULT_TIMEOUT):
-    logging.info('(s) new connection...')
-
-    nonce = util.random.randrange(2**256)
-    noncebytes = nonce.to_bytes(32, byteorder='big')
-    logging.debug('(s) sending nonce {}'.format(hex(nonce)))
-    writer.write(nonce.to_bytes(32, byteorder='big'))
-
-    rsv_bytes = await asyncio.wait_for(reader.read(65), timeout)
-    r, s, v = (int.from_bytes(b, byteorder='big') for b in (rsv_bytes[0:32], rsv_bytes[32:64], rsv_bytes[64:]))
-    logging.debug('(s) received signature rsv {}'.format(tuple(map(hex, (r, s, v)))))
-
-    try:
-        clipubkey = bitcoin.ecdsa_raw_recover(noncebytes, (v, r, s))
-    except ValueError:
-        clipubkey = False # I would have used None here but pybitcointools uses False for malformed signatures
-
-    if clipubkey:
-        cliethaddr = util.curve_point_to_eth_address(clipubkey)
-        logging.debug('(s) got client address: {}'.format(hex(cliethaddr)))
-    else:
-        cliethaddr = None
-
-    if cliethaddr is None:
-        logging.debug('(s) could not verify client signature; closing connection')
-        writer.close()
-        return
-
-    if cliethaddr not in ecdkg.accepted_addresses:
-        logging.info('(s) client address {} not accepted'.format(hex(cliethaddr)))
-        writer.close()
-        return
-
-    await establish_channel(cliethaddr, reader, writer)
 
 
 ################################################################################
