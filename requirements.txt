@@ -1,4 +1,7 @@
-parse
+bitcoin
 cryptography
+parse
+pysha3
 rlp
 merkle
+sqlalchemy
