@@ -4,9 +4,9 @@ import threading
 import certs
 import sys
 from cryptography.exceptions import InvalidSignature
-from models import Batch, SignedBatch, Signature
+from models import SignedBatch, Signature
 from util import crypto, ssl_context
-
+from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg
 
 def signer_service():
     global private_key
@@ -53,7 +53,7 @@ def handle_client(sock, addr):
     ssl_sock = ssl_context.wrap_server_socket(sock, certs.path_to('server.crt'), certs.path_to('server.key'))
 
     # Receive batch
-    data = ssl_sock.recv()
+    data =  recv_ssl_msg(ssl_sock)
     print("RECV: " + str(data))
     signed_batch = rlp.decode(data, SignedBatch)
     print("DECD: " + str(signed_batch))
@@ -64,11 +64,11 @@ def handle_client(sock, addr):
         crypto.verify(public_key, rlp.encode(signed_batch.batch), server_signature)
     except InvalidSignature:
         print("COULD NOT VERIFY SERVER SIGNATURE!")
-        ssl_sock.send(rlp.encode(Signature(instance_id, '')))
+        send_ssl_msg(ssl_sock, rlp.encode(Signature(instance_id, '')))
         ssl_sock.close()
         return
     # Sign and return
     batch_hash_signed = crypto.sign_rlp(private_key, signed_batch.batch)
     signature = Signature('signer_%d' % instance_id, batch_hash_signed)
-    ssl_sock.send(rlp.encode(signature))
+    send_ssl_msg(ssl_sock, rlp.encode(signature))
     ssl_sock.close()

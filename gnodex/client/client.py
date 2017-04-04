@@ -7,6 +7,7 @@ import parse
 from cryptography.exceptions import InvalidSignature
 from models import Order, SignedOrder, SignedReceipt
 from util import crypto, ssl_context
+from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg
 
 def trade_client():
     # Open SSL Connection
@@ -51,10 +52,10 @@ def trade_client():
         signed_order = SignedOrder(order, crypto.sign_rlp(private_key, order))
         signed_order_rlp_encoded = rlp.encode(signed_order)
         # TODO: Encrypt order with DKG Key
-        ssl_sock.send(signed_order_rlp_encoded)
+        send_ssl_msg(ssl_sock, signed_order_rlp_encoded)
         print("SENT: " + str(signed_order_rlp_encoded))
         # Receive signature from state server
-        signed_receipt = rlp.decode(ssl_sock.recv(), SignedReceipt)
+        signed_receipt = rlp.decode(recv_ssl_msg(ssl_sock), SignedReceipt)
         print("RECV: " + str(signed_receipt))
 
         # Verify Signed Order
