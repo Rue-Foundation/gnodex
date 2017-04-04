@@ -1,15 +1,19 @@
-import socket
+import threading
 import pprint
 import sys
 import rlp
 import certs
 import parse
+import merkle
 from cryptography.exceptions import InvalidSignature
-from models import Order, SignedOrder, SignedReceipt
-from util import crypto, ssl_context
-from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg, ssl_connect
+from models import Order, SignedOrder, SignedReceipt, Chain, ChainLink
+from util import crypto
+from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg, ssl_connect, recv_ssl_msg_timeout
 
 def trade_client(args):
+    global public_key
+    global private_key
+
     # Open SSL Connection
     ssl_sock = ssl_connect(('localhost', 31337), certs.path_to('server.crt'))
 
@@ -64,8 +68,35 @@ def trade_client(args):
         try:
             crypto.verify(public_key, receipt_rlp_encoded, signed_receipt.signature)
             print("SIGNATURE OK!")
+            t = threading.Timer(interval=2.0, function=request_membership_verification, args=(signed_receipt,))
+            t.start()
         except InvalidSignature:
             print("SIGNATURE VERIFICATION FAILED!!")
 
-def request_membership_verification(receipt):
-    pass
+
+def request_membership_verification(signed_receipt: SignedReceipt):
+    print("ASKING FOR VERIFICATION")
+    confirmed = False
+    try:
+        ssl_sock = ssl_connect(('localhost', 31337), certs.path_to('server.crt'))
+        send_ssl_msg(ssl_sock, 'CONFREQ'.encode('UTF-8'))
+        send_ssl_msg(ssl_sock, rlp.encode(signed_receipt))
+        data = recv_ssl_msg_timeout(ssl_sock)
+        chain = rlp.decode(data, Chain)
+        chain_links = [(link.value, link.side) for link in chain.links]
+        # TODO: Cry about missing n out of m signatures
+        confirmed = merkle.check_chain(chain_links)
+    except ConnectionError:
+        pass
+    except TimeoutError:
+        pass
+    finally:
+        if not confirmed:
+            print(
+                "ORDER CONFIRMATION NOT RECEIVED YET (%s, %s)" % (
+                signed_receipt.receipt.order_digest,
+                signed_receipt.receipt.round))
+            t = threading.Timer(interval=2.0, function=request_membership_verification, args=(signed_receipt,))
+            t.start()
+        else:
+            print("ORDER CONFIRMATION RECEIVED!!!")
