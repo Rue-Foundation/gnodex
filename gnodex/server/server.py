@@ -3,8 +3,8 @@ import rlp
 import threading
 import certs
 from cryptography.exceptions import InvalidSignature
-from models import Receipt, SignedReceipt, Batch, SignedBatch, Signature, SignedOrder, Order
-from util import crypto, ssl_context
+from models import Receipt, SignedReceipt, Batch, SignedBatch, Signature, SignedOrder, BatchCommitment
+from util import crypto, ssl_context, merkle_helper
 from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg
 
 
@@ -29,7 +29,7 @@ def master_state_service():
     current_round = 0
 
     # Create order batch submission timer
-    t = threading.Timer(interval=5.0, function=send_batch)
+    t = threading.Timer(interval=10.0, function=send_batch)
     t.start()
 
     # Accept connections and start handling them in own thread
@@ -48,22 +48,21 @@ def handle_client(sock, addr):
     while True:
         # Receive order
         data = recv_ssl_msg(ssl_sock)
-        print("RECV: " + str(data))
         order = rlp.decode(data, SignedOrder)
-        print("DECD: " + str(order))
+        print("ORDER RECEIVED")
         receipt_round = None
         with order_list_lock:
             orders.append(order)
             receipt_round = current_round
         # Create Receipt
         order_hash = crypto.sha256_utf8(data)
-        print("DIGEST: " + str(order_hash))
         receipt = Receipt(receipt_round, order_hash)
         # Create Signed Receipt
         receipt_hash_signed = crypto.sign_rlp(private_key, receipt)
         signed_receipt = SignedReceipt(receipt, receipt_hash_signed)
+        # Send response
         send_ssl_msg(ssl_sock, rlp.encode(signed_receipt))
-        print("RESP: " + str(signed_receipt))
+        print("RECEIPT SENT")
 
 static_signers = [
     ('localhost', 31338),
@@ -78,15 +77,18 @@ def send_batch():
 
     with order_list_lock:
         if orders:
+            # Commit to batch
+            merkle_tree = merkle_helper.merkle_tree_from_order_list(orders)
+            merkle_root = merkle_tree.build()
+            commitment = BatchCommitment(current_round, merkle_root)
             # Sign batch
-            batch = Batch(current_round, orders, 'XYZ')
-            batch_signature = crypto.sign_rlp(private_key, batch)
+            batch = Batch(orders, commitment)
+            commitment_signature = crypto.sign_rlp(private_key, commitment)
             signed_batch = SignedBatch(
-                [Signature('master_server', batch_signature)],
+                [Signature('master_server', commitment_signature)],
                 batch)
-
             signed_batch_rlp = rlp.encode(signed_batch)
-            print("SEND BATCH! " + str(signed_batch) + "\n" + str(signed_batch_rlp))
+            print("SENDING BATCH! ")
             # Communicate with signing services
             for signer in static_signers:
                 # Open SSL Connection
@@ -106,18 +108,16 @@ def send_batch():
                     send_ssl_msg(ssl_sock, signed_batch_rlp)
                     response = recv_ssl_msg(ssl_sock)
                     signature = rlp.decode(response, Signature)
-                    print("ID: " + str(signature.owner_id))
-                    print("SIG: " + str(signature.signature))
 
                     public_key = crypto.load_public_cert_key(certs.path_to('server.crt'))
 
                     try:
-                        crypto.verify(public_key, rlp.encode(batch), signature.signature)
+                        crypto.verify(public_key, rlp.encode(commitment), signature.signature)
                         print("SIGNATURE OK!")
                     except InvalidSignature:
                         print("SIGNATURE VERIFICATION FAILED!!")
             orders.clear()
         current_round += 1
     # Create order batch submission timer
-    t = threading.Timer(interval=5.0, function=send_batch)
+    t = threading.Timer(interval=10.0, function=send_batch)
     t.start()

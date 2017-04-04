@@ -4,11 +4,17 @@ from .order import Order, SignedOrder
 from .crypto import Signature
 
 
-class Batch(rlp.Serializable):
+class BatchCommitment(rlp.Serializable):
     fields = [
         ('round', BigEndianInt(8)),
-        ('orders', CountableList(SignedOrder)),
         ('merkle_root', raw),
+    ]
+
+
+class Batch(rlp.Serializable):
+    fields = [
+        ('orders', CountableList(SignedOrder)),
+        ('commitment', BatchCommitment),
     ]
 
 

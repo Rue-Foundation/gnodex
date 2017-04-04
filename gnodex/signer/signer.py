@@ -4,8 +4,8 @@ import threading
 import certs
 import sys
 from cryptography.exceptions import InvalidSignature
-from models import SignedBatch, Signature
-from util import crypto, ssl_context
+from models import BatchCommitment, SignedBatch, Signature
+from util import crypto, ssl_context, merkle_helper
 from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg
 
 def signer_service():
@@ -54,21 +54,32 @@ def handle_client(sock, addr):
 
     # Receive batch
     data =  recv_ssl_msg(ssl_sock)
-    print("RECV: " + str(data))
     signed_batch = rlp.decode(data, SignedBatch)
-    print("DECD: " + str(signed_batch))
-    # Verify server signature
+    print("BATCH RECEIVED")
+    batch = signed_batch.batch
+    commitment = batch.commitment
+
+    # Empty signature
+    commitment_signature = ''
     try:
+        # Verify Merkle Tree construction
+        merkle_tree = merkle_helper.merkle_tree_from_order_list(batch.orders)
+        merkle_root = merkle_tree.build()
+        if merkle_root != commitment.merkle_root:
+            print("COULD NOT RECONSTRUCT MERKLE TREE")
+            return
+        # Verify server signature
         server_signature = signed_batch.signatures[0].signature
         public_key = crypto.load_public_cert_key(certs.path_to('server.crt'))
-        crypto.verify(public_key, rlp.encode(signed_batch.batch), server_signature)
+        crypto.verify(public_key, rlp.encode(commitment), server_signature)
+        # All ok, sign commitment
+        print("BATCH SIGNED")
+        commitment_signature = crypto.sign_rlp(private_key, commitment)
     except InvalidSignature:
         print("COULD NOT VERIFY SERVER SIGNATURE!")
-        send_ssl_msg(ssl_sock, rlp.encode(Signature(instance_id, '')))
-        ssl_sock.close()
-        return
-    # Sign and return
-    batch_hash_signed = crypto.sign_rlp(private_key, signed_batch.batch)
-    signature = Signature('signer_%d' % instance_id, batch_hash_signed)
-    send_ssl_msg(ssl_sock, rlp.encode(signature))
-    ssl_sock.close()
+    finally:
+        # Return result
+        signature = Signature('signer_%d' % instance_id, commitment_signature)
+        with ssl_sock:
+            send_ssl_msg(ssl_sock, rlp.encode(signature))
+        print("RESPONSE SENT")

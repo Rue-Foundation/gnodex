@@ -53,16 +53,12 @@ def trade_client():
         signed_order_rlp_encoded = rlp.encode(signed_order)
         # TODO: Encrypt order with DKG Key
         send_ssl_msg(ssl_sock, signed_order_rlp_encoded)
-        print("SENT: " + str(signed_order_rlp_encoded))
         # Receive signature from state server
         signed_receipt = rlp.decode(recv_ssl_msg(ssl_sock), SignedReceipt)
-        print("RECV: " + str(signed_receipt))
 
         # Verify Signed Order
         order_hash = crypto.sha256_utf8(signed_order_rlp_encoded)
         receipt_order_digest = signed_receipt.receipt.order_digest
-        print("DIGEST: " + str(order_hash))
-        print("GOT: " + str(receipt_order_digest))
         if (order_hash != receipt_order_digest):
             print("INVALID ORDER HASH!")
             continue
