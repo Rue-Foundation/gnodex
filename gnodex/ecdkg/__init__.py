@@ -62,10 +62,15 @@ def main(args):
     loop.run_until_complete(networking.server(args.host, args.port, loop=loop))
     for hostname, port in locations:
         loop.create_task(networking.attempt_to_establish_channel(hostname, port))
+    loop.create_task(networking.emit_heartbeats())
 
     try:
         loop.run_forever()
     except SystemExit:
+        pass
+    finally:
+        for task in asyncio.Task.all_tasks(loop):
+            task.cancel()
         loop.run_until_complete(loop.shutdown_asyncgens())
         loop.close()
         logging.info('Goodbye')

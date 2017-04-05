@@ -16,13 +16,14 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
+from jsonrpc import JSONRPCResponseManager
 
-from . import util, ecdkg
+from . import util, ecdkg, rpc_interface
 
 
 DEFAULT_TIMEOUT = 120
+HEARTBEAT_INTERVAL = 20
 
-class NetworkingError(Exception): pass
 ChannelInfo = collections.namedtuple('ChannelInfo', ('reader', 'writer'))
 LineReader = collections.namedtuple('LineReader', ('readline'))
 
@@ -119,10 +120,20 @@ async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writ
             logging.info('received message {} from {}'.format(obj, hex(eth_address)))
     except asyncio.TimeoutError:
         logging.warn('channel for {} timed out'.format(hex(eth_address)))
-        del channels[eth_address]
     finally:
-        logging.info('closing channel for {}'.format(hex(eth_address)))
         writer.close()
+        if writer is channels[eth_address].writer:
+            logging.info('removing channel for {}'.format(hex(eth_address)))
+            del channels[eth_address]
+
+
+################################################################################
+
+async def emit_heartbeats():
+    while True:
+        for addr, cinfo in channels.items():
+            cinfo.writer.write(b'\n')
+        await asyncio.sleep(HEARTBEAT_INTERVAL)
 
 
 ################################################################################
@@ -132,7 +143,9 @@ async def server(host: str, port: int, *,
                  loop: asyncio.AbstractEventLoop):
 
     async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        logging.info('(s) new connection...')
+        cliipaddr = writer.get_extra_info('peername')
+        ownipaddr = writer.get_extra_info('sockname')
+        logging.info('{} <-- {}'.format(ownipaddr, cliipaddr))
 
         protocol_indicator = await asyncio.wait_for(reader.read(4), timeout)
 
@@ -163,7 +176,7 @@ async def server(host: str, port: int, *,
                 return
 
             if cliethaddr not in ecdkg.accepted_addresses:
-                logging.info('(s) client address {} not accepted'.format(hex(cliethaddr)))
+                logging.debug('(s) client address {} not accepted'.format(hex(cliethaddr)))
                 writer.close()
                 return
 
@@ -180,8 +193,7 @@ async def server(host: str, port: int, *,
                          b'lol\r\n')
             writer.close()
 
-
-    logging.info('(s) serving on {}:{}'.format(host, port))
+    logging.debug('(s) serving on {}:{}'.format(host, port))
     await asyncio.start_server(handle_connection,
                                host, port, ssl=ssl_context, loop=loop)
 
@@ -192,29 +204,34 @@ async def server(host: str, port: int, *,
 async def attempt_to_establish_channel(host: str, port: int, *,
                                        timeout: 'seconds' = DEFAULT_TIMEOUT,
                                        num_tries: int = 6):
-    logging.info('(c) attempting to connect to {}:{}'.format(host, port))
+
+    logging.debug('(c) attempting to connect to {}:{}'.format(host, port))
     for i in range(num_tries):
         try:
             reader, writer = await asyncio.open_connection(host, port, ssl=ssl_context)
         except OSError as e:
             if e.errno == 111 or '[Errno 111]' in str(e): # connection refused
                 wait_time = 5 * 2**i
-                logging.warning('(c) connection to {}:{} refused; trying again in {}s'.format(host, port, wait_time))
+                logging.debug('(c) connection to {}:{} refused; trying again in {}s'.format(host, port, wait_time))
                 await asyncio.sleep(wait_time)
             else:
                 raise
         else:
+            srvipaddr = writer.get_extra_info('peername')
+            ownipaddr = writer.get_extra_info('sockname')
+            logging.info('{} --> {}'.format(ownipaddr, srvipaddr))
             break
     else:
-        raise NetworkingError('Could not connect to {}:{} after {} tries'.format(host, port, num_tries))
+        logging.warning('could not connect to {}:{} after {} tries'.format(host, port, num_tries))
 
     sslsocket = writer.get_extra_info('ssl_object')
     logging.debug('(c) socket cipher: {}'.format(sslsocket.cipher()))
     srvpubkey = get_public_key_from_ssl_socket(sslsocket)
     srvethaddr = util.curve_point_to_eth_address(srvpubkey)
     logging.debug('(c) server eth address: {}'.format(hex(srvethaddr)))
+
     if srvethaddr not in ecdkg.accepted_addresses:
-        logging.info('(c) server eth address {} not accepted'.format(hex(srvethaddr)))
+        logging.debug('(c) server eth address {} not accepted'.format(hex(srvethaddr)))
         writer.close()
         return
 

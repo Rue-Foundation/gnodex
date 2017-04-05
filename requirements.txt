@@ -1,5 +1,6 @@
 bitcoin
 cryptography
+json-rpc
 parse
 pysha3
 rlp
