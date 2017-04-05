@@ -24,8 +24,8 @@ from . import util, ecdkg, rpc_interface
 DEFAULT_TIMEOUT = 120
 HEARTBEAT_INTERVAL = 20
 
-ChannelInfo = collections.namedtuple('ChannelInfo', ('reader', 'writer'))
 LineReader = collections.namedtuple('LineReader', ('readline'))
+
 
 class HTTPRequest(BaseHTTPRequestHandler):
     def __init__(self, raw_requestline, stream_reader):
@@ -108,12 +108,17 @@ async def json_lines_with_timeout(reader: asyncio.StreamReader, timeout: 'second
 
 
 async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-    if eth_address in channels:
+    if eth_address not in channels:
+        channels[eth_address] = {}
+
+    if 'writer' in channels[eth_address]:
         logging.warn('channel for {} already exists; closing existing channel...'.format(hex(eth_address)))
-        channels[eth_address].writer.close()
+        channels[eth_address]['writer'].close()
 
     logging.info('establishing channel for {}'.format(hex(eth_address)))
-    channels[eth_address] = ChannelInfo(reader=reader, writer=writer)
+    channels[eth_address]['reader'] = reader
+    channels[eth_address]['writer'] = writer
+    channels[eth_address]['rpcdispatcher'] = rpc_interface.create_dispatcher(eth_address)
 
     try:
         async for obj in json_lines_with_timeout(reader):
@@ -122,9 +127,10 @@ async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writ
         logging.warn('channel for {} timed out'.format(hex(eth_address)))
     finally:
         writer.close()
-        if writer is channels[eth_address].writer:
+        if writer is channels[eth_address].get('writer'):
             logging.info('removing channel for {}'.format(hex(eth_address)))
-            del channels[eth_address]
+            del channels[eth_address]['reader']
+            del channels[eth_address]['writer']
 
 
 ################################################################################
@@ -132,7 +138,8 @@ async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writ
 async def emit_heartbeats():
     while True:
         for addr, cinfo in channels.items():
-            cinfo.writer.write(b'\n')
+            if 'writer' in cinfo:
+                cinfo['writer'].write(b'\n')
         await asyncio.sleep(HEARTBEAT_INTERVAL)
 
 
