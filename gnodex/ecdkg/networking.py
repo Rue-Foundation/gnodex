@@ -1,7 +1,6 @@
 import asyncio
 import collections
 import datetime
-import fileinput
 import json
 import logging
 import os
@@ -25,6 +24,33 @@ DEFAULT_TIMEOUT = 120
 
 class NetworkingError(Exception): pass
 ChannelInfo = collections.namedtuple('ChannelInfo', ('reader', 'writer'))
+LineReader = collections.namedtuple('LineReader', ('readline'))
+
+class HTTPRequest(BaseHTTPRequestHandler):
+    def __init__(self, raw_requestline, stream_reader):
+        self.raw_requestline = raw_requestline
+        self.stream_reader = stream_reader
+        self.error_code = self.error_message = None
+        def rfile_readline(_):
+            gen = self.stream_reader.readline()
+            try:
+                while True:
+                    next(gen)
+            except StopIteration as stop:
+                return stop.value
+        self.rfile = LineReader(readline=rfile_readline)
+        self.parse_request()
+
+    def send_error(self, code, message):
+        self.error_code = code
+        self.error_message = message
+
+    def __repr__(self):
+        return '<{module}.{classname}\n {desc}>'.format(
+            module=__name__,
+            classname=self.__class__.__name__,
+            desc='\n '.join('{}={}'.format(attr, ('\n  '+' '*len(attr)).join(filter(bool, str(getattr(self, attr, None)).split('\n')))) for attr in ('command', 'path', 'headers')))
+
 
 ssl_context = None
 channels = {}
@@ -108,7 +134,7 @@ async def server(host: str, port: int, *,
     async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
         logging.info('(s) new connection...')
 
-        protocol_indicator = await reader.read(4)
+        protocol_indicator = await asyncio.wait_for(reader.read(4), timeout)
 
         if protocol_indicator == b'DKG ':
             nonce = util.random.randrange(2**256)
@@ -142,6 +168,18 @@ async def server(host: str, port: int, *,
                 return
 
             await establish_channel(cliethaddr, reader, writer)
+
+        elif len(protocol_indicator) > 0:
+            req = HTTPRequest(protocol_indicator + await asyncio.wait_for(reader.readline(), timeout), reader)
+            contentlen = req.headers.get('Content-Length')
+            if contentlen is not None:
+                contentlen = int(contentlen)
+                req.body = await reader.read(contentlen)
+
+            writer.write(b'HTTP/1.1 200 OK\r\n\r\n'
+                         b'lol\r\n')
+            writer.close()
+
 
     logging.info('(s) serving on {}:{}'.format(host, port))
     await asyncio.start_server(handle_connection,
