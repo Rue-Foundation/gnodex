@@ -107,7 +107,7 @@ async def json_lines_with_timeout(reader: asyncio.StreamReader, timeout: 'second
             pass
 
 
-async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, location: (str, int) = None):
     if eth_address not in channels:
         channels[eth_address] = {}
 
@@ -119,6 +119,8 @@ async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writ
     channels[eth_address]['reader'] = reader
     channels[eth_address]['writer'] = writer
     channels[eth_address]['rpcdispatcher'] = rpc_interface.create_dispatcher(eth_address)
+    if location is not None:
+        channels[eth_address]['location'] = location
 
     try:
         async for obj in json_lines_with_timeout(reader):
@@ -252,4 +254,4 @@ async def attempt_to_establish_channel(host: str, port: int, *,
     logging.debug('(c) sending nonce signature rsv {}'.format(tuple(map(hex, (r, s, v)))))
     writer.write(r.to_bytes(32, 'big') + s.to_bytes(32, 'big') + v.to_bytes(1, 'big'))
 
-    await establish_channel(srvethaddr, reader, writer)
+    await establish_channel(srvethaddr, reader, writer, srvipaddr)
