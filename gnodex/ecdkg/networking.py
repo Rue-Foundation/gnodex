@@ -55,6 +55,7 @@ class HTTPRequest(BaseHTTPRequestHandler):
 
 ssl_context = None
 channels = {}
+default_dispatcher = rpc_interface.create_dispatcher()
 
 
 def set_ssl_using_key(private_key: int) -> ssl.SSLContext:
@@ -152,54 +153,62 @@ async def server(host: str, port: int, *,
                  loop: asyncio.AbstractEventLoop):
 
     async def handle_connection(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
-        cliipaddr = writer.get_extra_info('peername')
-        ownipaddr = writer.get_extra_info('sockname')
-        logging.info('{} <-- {}'.format(ownipaddr, cliipaddr))
+        try:
+            cliipaddr = writer.get_extra_info('peername')
+            ownipaddr = writer.get_extra_info('sockname')
+            logging.info('{} <-- {}'.format(ownipaddr, cliipaddr))
 
-        protocol_indicator = await asyncio.wait_for(reader.read(4), timeout)
+            protocol_indicator = await asyncio.wait_for(reader.read(4), timeout)
 
-        if protocol_indicator == b'DKG ':
-            nonce = util.random.randrange(2**256)
-            noncebytes = nonce.to_bytes(32, byteorder='big')
-            logging.debug('(s) sending nonce {}'.format(hex(nonce)))
-            writer.write(nonce.to_bytes(32, byteorder='big'))
+            if protocol_indicator == b'DKG ':
+                nonce = util.random.randrange(2**256)
+                noncebytes = nonce.to_bytes(32, byteorder='big')
+                logging.debug('(s) sending nonce {}'.format(hex(nonce)))
+                writer.write(nonce.to_bytes(32, byteorder='big'))
 
-            rsv_bytes = await asyncio.wait_for(reader.read(65), timeout)
-            r, s, v = (int.from_bytes(b, byteorder='big') for b in (rsv_bytes[0:32], rsv_bytes[32:64], rsv_bytes[64:]))
-            logging.debug('(s) received signature rsv {}'.format(tuple(map(hex, (r, s, v)))))
+                rsv_bytes = await asyncio.wait_for(reader.read(65), timeout)
+                r, s, v = (int.from_bytes(b, byteorder='big') for b in (rsv_bytes[0:32], rsv_bytes[32:64], rsv_bytes[64:]))
+                logging.debug('(s) received signature rsv {}'.format(tuple(map(hex, (r, s, v)))))
 
-            try:
-                clipubkey = bitcoin.ecdsa_raw_recover(noncebytes, (v, r, s))
-            except ValueError:
-                clipubkey = False # I would have used None here but pybitcointools uses False for malformed signatures
+                try:
+                    clipubkey = bitcoin.ecdsa_raw_recover(noncebytes, (v, r, s))
+                except ValueError:
+                    clipubkey = False # I would have used None here but pybitcointools uses False for malformed signatures
 
-            if clipubkey:
-                cliethaddr = util.curve_point_to_eth_address(clipubkey)
-                logging.debug('(s) got client address: {}'.format(hex(cliethaddr)))
-            else:
-                cliethaddr = None
+                if clipubkey:
+                    cliethaddr = util.curve_point_to_eth_address(clipubkey)
+                    logging.debug('(s) got client address: {}'.format(hex(cliethaddr)))
+                else:
+                    cliethaddr = None
 
-            if cliethaddr is None:
-                logging.debug('(s) could not verify client signature; closing connection')
-                writer.close()
-                return
+                if cliethaddr is None:
+                    logging.debug('(s) could not verify client signature; closing connection')
+                    return
 
-            if cliethaddr not in ecdkg.accepted_addresses:
-                logging.debug('(s) client address {} not accepted'.format(hex(cliethaddr)))
-                writer.close()
-                return
+                if cliethaddr not in ecdkg.accepted_addresses:
+                    logging.debug('(s) client address {} not accepted'.format(hex(cliethaddr)))
+                    return
 
-            await establish_channel(cliethaddr, reader, writer)
+                await establish_channel(cliethaddr, reader, writer)
 
-        elif len(protocol_indicator) > 0:
-            req = HTTPRequest(protocol_indicator + await asyncio.wait_for(reader.readline(), timeout), reader)
-            contentlen = req.headers.get('Content-Length')
-            if contentlen is not None:
-                contentlen = int(contentlen)
-                req.body = await reader.read(contentlen)
+            elif len(protocol_indicator) > 0:
+                req = HTTPRequest(protocol_indicator + await asyncio.wait_for(reader.readline(), timeout), reader)
+                contentlen = req.headers.get('Content-Length')
+                if contentlen is not None:
+                    contentlen = int(contentlen)
+                    req.body = await reader.read(contentlen)
 
-            writer.write(b'HTTP/1.1 200 OK\r\n\r\n'
-                         b'lol\r\n')
+                res = JSONRPCResponseManager.handle(req.body, default_dispatcher)
+                res_str = res.json.encode('UTF-8')
+
+                writer.write(b'HTTP/1.1 200 OK\r\n'
+                             b'Content-Type: application/json; charset=UTF-8\r\n'
+                             b'Content-Length: ')
+                writer.write(str(len(res_str) + 1).encode('UTF-8'))
+                writer.write(b'\r\n\r\n')
+                writer.write(res_str)
+                writer.write(b'\n')
+        finally:
             writer.close()
 
     logging.debug('(s) serving on {}:{}'.format(host, port))
