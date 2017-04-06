@@ -3,5 +3,6 @@ cryptography
 json-rpc
 parse
 pysha3
+python-dateutil
 rlp
 sqlalchemy

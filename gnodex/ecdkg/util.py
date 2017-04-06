@@ -6,6 +6,9 @@ import re
 import bitcoin
 import sha3
 
+from dateutil.parser import parse as parse_datetime
+from dateutil.tz import tzutc
+
 try:
     from secrets import SystemRandom
     random = SystemRandom()
@@ -45,6 +48,26 @@ def validate_curve_point(point: (int, int)):
 def validate_eth_address(addr: int):
     if addr < 0 or addr >= 2**160:
         raise ValueError('invalid Ethereum address {}'.format(hex(addr)))
+
+
+def normalize_decryption_condition(deccond: str) -> str:
+    prefix = 'past '
+    if deccond.startswith(prefix):
+        try:
+            dt = parse_datetime(deccond[len(prefix):])
+        except ValueError as e:
+            raise ValueError('could not parse date for "past" condition from string "{}"'.format(deccond[len(prefix):]))
+
+        # All time values internally UTC
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(tzutc())
+
+        # Strip out subsecond info and make naive
+        dt = dt.replace(microsecond=0, tzinfo=None)
+
+        return prefix + dt.isoformat()
+
+    raise ValueError('invalid decryption condition {}'.format(deccond))
 
 
 def sequence_256_bit_values_to_bytes(sequence: tuple) -> bytes:

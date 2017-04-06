@@ -9,7 +9,7 @@ import sys
 
 import bitcoin
 
-from . import util, networking, ecdkg
+from . import util, networking, ecdkg, db
 
 
 def setup_argparser(parser):
@@ -48,6 +48,8 @@ def main(args):
         logging.warn('not accepting any addresses')
 
     ssl_context = networking.set_ssl_using_key(ecdkg.private_key)
+
+    db.init()
 
 
     def shutdown(signum, frame):

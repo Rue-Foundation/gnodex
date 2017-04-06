@@ -40,18 +40,22 @@ class ECDKGPhase(enum.Enum):
 
 
 class ECDKG(db.Base):
+    decryption_condition = db.Column(db.String(32), index=True, unique=True)
     phase = db.Column(db.Enum(ECDKGPhase), nullable=False, default=ECDKGPhase.uninitialized)
     threshold = db.Column(db.Integer)
     alt_generator = db.Column(db.CurvePoint)
+    alt_generator_part = db.Column(db.CurvePoint)
     secret_poly1 = db.Column(db.Polynomial)
     secret_poly2 = db.Column(db.Polynomial)
+    public_key = db.Column(db.CurvePoint)
     participants = db.relationship('ECDKGParticipant', back_populates='ecdkg')
 
 
 class ECDKGParticipant(db.Base):
     ecdkg_id = db.Column(db.Integer, db.ForeignKey('ecdkg.id'))
     ecdkg = db.relationship('ECDKG', back_populates='participants')
-    eth_address = db.Column(db.EthAddress)
-    public_shares = db.Column(db.CurvePointTuple)
+    eth_address = db.Column(db.EthAddress, index=True)
+    public_key_share = db.Column(db.CurvePoint)
+    verification_shares = db.Column(db.CurvePointTuple)
     secret_share1 = db.Column(db.PrivateValue)
     secret_share2 = db.Column(db.PrivateValue)

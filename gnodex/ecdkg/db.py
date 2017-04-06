@@ -2,7 +2,7 @@ import math
 
 import sqlalchemy.types as types
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import scoped_session, sessionmaker, relationship
 from sqlalchemy import Column, Integer, String, Enum, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
 
@@ -22,7 +22,7 @@ Base = declarative_base(cls=Base)
 def init():
     global engine, Session
     engine = create_engine('sqlite:///:memory:')
-    Session = sessionmaker(engine)
+    Session = scoped_session(sessionmaker(engine))
     Base.metadata.create_all(engine)
 
 

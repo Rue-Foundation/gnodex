@@ -18,7 +18,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from jsonrpc import JSONRPCResponseManager
 
-from . import util, ecdkg, rpc_interface
+from . import util, ecdkg, rpc_interface, db
 
 
 DEFAULT_TIMEOUT = 120
@@ -202,15 +202,20 @@ async def server(host: str, port: int, *,
                     req.body = await reader.read(contentlen)
 
                 res = JSONRPCResponseManager.handle(req.body, default_dispatcher)
-                res_str = res.json.encode('UTF-8')
+                db.Session.remove()
 
-                writer.write(b'HTTP/1.1 200 OK\r\n'
-                             b'Content-Type: application/json; charset=UTF-8\r\n'
-                             b'Content-Length: ')
-                writer.write(str(len(res_str) + 1).encode('UTF-8'))
-                writer.write(b'\r\n\r\n')
-                writer.write(res_str)
-                writer.write(b'\n')
+                if res is None:
+                    writer.write(b'HTTP/1.1 204 No Content\r\n\r\n')
+                else:
+                    res_str = res.json.encode('UTF-8')
+
+                    writer.write(b'HTTP/1.1 200 OK\r\n'
+                                 b'Content-Type: application/json; charset=UTF-8\r\n'
+                                 b'Content-Length: ')
+                    writer.write(str(len(res_str) + 1).encode('UTF-8'))
+                    writer.write(b'\r\n\r\n')
+                    writer.write(res_str)
+                    writer.write(b'\n')
         finally:
             writer.close()
 
