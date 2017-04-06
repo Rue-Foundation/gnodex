@@ -22,7 +22,7 @@ from . import util, ecdkg, rpc_interface
 
 
 DEFAULT_TIMEOUT = 120
-HEARTBEAT_INTERVAL = 20
+HEARTBEAT_INTERVAL = 30
 
 LineReader = collections.namedtuple('LineReader', ('readline'))
 
@@ -104,8 +104,9 @@ def get_public_key_from_ssl_socket(sslsocket: ssl.SSLSocket) -> (int, int):
 
 async def json_lines_with_timeout(reader: asyncio.StreamReader, timeout: 'seconds' = DEFAULT_TIMEOUT):
     while not reader.at_eof():
+        line = await asyncio.wait_for(reader.readline(), timeout)
         try:
-            yield json.loads(await asyncio.wait_for(reader.readline(), timeout))
+            yield json.loads(line)
         except json.JSONDecodeError as e:
             pass
 
