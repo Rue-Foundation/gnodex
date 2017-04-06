@@ -27,6 +27,8 @@ HEARTBEAT_INTERVAL = 20
 LineReader = collections.namedtuple('LineReader', ('readline'))
 
 
+# Adapted from http://stackoverflow.com/a/5955949
+# but made to work (synchronously) with asyncio.StreamReader
 class HTTPRequest(BaseHTTPRequestHandler):
     def __init__(self, raw_requestline, stream_reader):
         self.raw_requestline = raw_requestline
