@@ -231,9 +231,10 @@ async def attempt_to_establish_channel(host: str, port: int, *,
             reader, writer = await asyncio.open_connection(host, port, ssl=ssl_context)
         except OSError as e:
             if e.errno == 111 or '[Errno 111]' in str(e): # connection refused
-                wait_time = 5 * 2**i
-                logging.debug('(c) connection to {}:{} refused; trying again in {}s'.format(host, port, wait_time))
-                await asyncio.sleep(wait_time)
+                if i < num_tries - 1:
+                    wait_time = 5 * 2**i
+                    logging.debug('(c) connection to {}:{} refused; trying again in {}s'.format(host, port, wait_time))
+                    await asyncio.sleep(wait_time)
             else:
                 raise
         else:
@@ -243,26 +244,29 @@ async def attempt_to_establish_channel(host: str, port: int, *,
             break
     else:
         logging.warning('could not connect to {}:{} after {} tries'.format(host, port, num_tries))
-
-    sslsocket = writer.get_extra_info('ssl_object')
-    logging.debug('(c) socket cipher: {}'.format(sslsocket.cipher()))
-    srvpubkey = get_public_key_from_ssl_socket(sslsocket)
-    srvethaddr = util.curve_point_to_eth_address(srvpubkey)
-    logging.debug('(c) server eth address: {}'.format(hex(srvethaddr)))
-
-    if srvethaddr not in ecdkg.accepted_addresses:
-        logging.debug('(c) server eth address {} not accepted'.format(hex(srvethaddr)))
-        writer.close()
         return
 
-    writer.write(b'DKG ')
+    try:
+        sslsocket = writer.get_extra_info('ssl_object')
+        logging.debug('(c) socket cipher: {}'.format(sslsocket.cipher()))
+        srvpubkey = get_public_key_from_ssl_socket(sslsocket)
+        srvethaddr = util.curve_point_to_eth_address(srvpubkey)
+        logging.debug('(c) server eth address: {}'.format(hex(srvethaddr)))
 
-    noncebytes = await asyncio.wait_for(reader.read(32), timeout)
-    nonce = int.from_bytes(noncebytes, byteorder='big')
-    logging.debug('(c) got nonce: {}'.format(hex(nonce)))
+        if srvethaddr not in ecdkg.accepted_addresses:
+            logging.debug('(c) server eth address {} not accepted'.format(hex(srvethaddr)))
+            return
 
-    v, r, s = bitcoin.ecdsa_raw_sign(noncebytes, ecdkg.private_key)
-    logging.debug('(c) sending nonce signature rsv {}'.format(tuple(map(hex, (r, s, v)))))
-    writer.write(r.to_bytes(32, 'big') + s.to_bytes(32, 'big') + v.to_bytes(1, 'big'))
+        writer.write(b'DKG ')
 
-    await establish_channel(srvethaddr, reader, writer, srvipaddr)
+        noncebytes = await asyncio.wait_for(reader.read(32), timeout)
+        nonce = int.from_bytes(noncebytes, byteorder='big')
+        logging.debug('(c) got nonce: {}'.format(hex(nonce)))
+
+        v, r, s = bitcoin.ecdsa_raw_sign(noncebytes, ecdkg.private_key)
+        logging.debug('(c) sending nonce signature rsv {}'.format(tuple(map(hex, (r, s, v)))))
+        writer.write(r.to_bytes(32, 'big') + s.to_bytes(32, 'big') + v.to_bytes(1, 'big'))
+
+        await establish_channel(srvethaddr, reader, writer, srvipaddr)
+    finally:
+        writer.close()
