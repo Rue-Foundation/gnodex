@@ -208,8 +208,10 @@ async def server(host: str, port: int, *,
                     writer.write(b'HTTP/1.1 204 No Content\r\n\r\n')
                 else:
                     res_data = res.data
-                    if 'result' in res_data and asyncio.iscoroutine(res_data['result']):
-                        res_data['result'] = await res_data['result']
+                    if 'result' in res_data:
+                        if (asyncio.iscoroutine(res_data['result']) or
+                            isinstance(res_data['result'], asyncio.Future)):
+                            res_data['result'] = await asyncio.wait_for(res_data['result'], timeout)
 
                     res_str = json.dumps(res_data, indent=2, sort_keys=True).encode('UTF-8')
 
