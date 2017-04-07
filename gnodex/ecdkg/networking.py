@@ -207,7 +207,11 @@ async def server(host: str, port: int, *,
                 if res is None:
                     writer.write(b'HTTP/1.1 204 No Content\r\n\r\n')
                 else:
-                    res_str = json.dumps(res.data, indent=2, sort_keys=True).encode('UTF-8')
+                    res_data = res.data
+                    if 'result' in res_data and asyncio.iscoroutine(res_data['result']):
+                        res_data['result'] = await res_data['result']
+
+                    res_str = json.dumps(res_data, indent=2, sort_keys=True).encode('UTF-8')
 
                     writer.write(b'HTTP/1.1 200 OK\r\n'
                                  b'Content-Type: application/json; charset=UTF-8\r\n'

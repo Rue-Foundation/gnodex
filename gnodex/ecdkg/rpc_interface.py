@@ -1,3 +1,4 @@
+import asyncio
 import bitcoin
 
 from jsonrpc.dispatcher import Dispatcher
@@ -16,8 +17,11 @@ def create_dispatcher(address: int = None):
 
     @dispatcher.add_method
     def get_ecdkg_state(decryption_condition):
-        ecdkg_obj = ecdkg.ECDKG.get_or_create_by_decryption_condition(decryption_condition)
-        return ecdkg_obj.to_state_message(address)
+        async def troll_for_a_bit():
+            await asyncio.sleep(1.0)
+            ecdkg_obj = ecdkg.ECDKG.get_or_create_by_decryption_condition(decryption_condition)
+            return ecdkg_obj.to_state_message(address)
+        return troll_for_a_bit()
 
 
     if address is not None:
