@@ -44,11 +44,13 @@ class ECDKG(db.Base):
     phase = db.Column(db.Enum(ECDKGPhase), nullable=False, default=ECDKGPhase.uninitialized)
     threshold = db.Column(db.Integer)
     alt_generator = db.Column(db.CurvePoint)
+    public_key = db.Column(db.CurvePoint)
+    participants = db.relationship('ECDKGParticipant', back_populates='ecdkg')
+
     alt_generator_part = db.Column(db.CurvePoint)
     secret_poly1 = db.Column(db.Polynomial)
     secret_poly2 = db.Column(db.Polynomial)
-    public_key = db.Column(db.CurvePoint)
-    participants = db.relationship('ECDKGParticipant', back_populates='ecdkg')
+    public_key_share = db.Column(db.CurvePoint)
 
 
 class ECDKGParticipant(db.Base):

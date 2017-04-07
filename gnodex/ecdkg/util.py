@@ -47,7 +47,14 @@ def validate_curve_point(point: (int, int)):
 
 def validate_eth_address(addr: int):
     if addr < 0 or addr >= 2**160:
-        raise ValueError('invalid Ethereum address {}'.format(hex(addr)))
+        raise ValueError('invalid Ethereum address {:040x}'.format(addr))
+
+
+def validate_signature(signature: 'rsv triplet'):
+    r, s, v = signature
+    if (any(coord < 0 or coord >= bitcoin.P for coord in (r, s)) or
+       v not in (27, 28)):
+        raise ValueError('invalid signature {}'.format(signature))
 
 
 def normalize_decryption_condition(deccond: str) -> str:
