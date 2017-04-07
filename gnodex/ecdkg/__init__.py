@@ -33,14 +33,14 @@ def main(args):
 
     ecdkg.private_key = util.get_or_generate_private_value(args.private_key_file)
     own_public_key = bitcoin.fast_multiply(bitcoin.G, ecdkg.private_key)
-    own_address = util.curve_point_to_eth_address(own_public_key)
+    ecdkg.own_address = util.curve_point_to_eth_address(own_public_key)
     ecdkg.accepted_addresses = util.get_addresses(args.addresses_file)
-    ecdkg.accepted_addresses.difference_update((own_address,))
+    ecdkg.accepted_addresses.difference_update((ecdkg.own_address,))
     locations = util.get_locations(args.locations_file)
 
 
     logging.debug('own pubkey: ({}, {})'.format(*map(hex, own_public_key)))
-    logging.info('own address: {}'.format(hex(own_address)))
+    logging.info('own address: {}'.format(hex(ecdkg.own_address)))
     if ecdkg.accepted_addresses:
         logging.info('accepted addresses: {{\n    {}\n}}'.format(
             '\n    '.join(hex(a) for a in ecdkg.accepted_addresses)))

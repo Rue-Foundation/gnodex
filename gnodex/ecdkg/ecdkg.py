@@ -1,3 +1,5 @@
+import asyncio
+import collections
 import enum
 import functools
 import itertools
@@ -6,6 +8,13 @@ import logging
 import bitcoin
 
 from . import db, util
+
+
+COMS_TIMEOUT = .5
+THRESHOLD_FACTOR = .5
+
+secret_share_futures = collections.OrderedDict()
+public_key_share_futures = collections.OrderedDict()
 
 
 def random_polynomial(order: int) -> tuple:
@@ -46,6 +55,7 @@ class ECDKG(db.Base):
     alt_generator_part = db.Column(db.CurvePoint)
     secret_poly1 = db.Column(db.Polynomial)
     secret_poly2 = db.Column(db.Polynomial)
+    verification_points = db.Column(db.CurvePointTuple)
     public_key_share = db.Column(db.CurvePoint)
 
 
@@ -78,12 +88,43 @@ class ECDKG(db.Base):
             db.Session.add(participant)
             db.Session.commit()
 
+        sfid = (self.id, address)
+
+        if sfid not in secret_share_futures:
+            secret_share_futures[sfid] = asyncio.Future()
+            if (participant.secret_share1 is not None and
+                participant.secret_share2 is not None):
+                secret_share_futures[sfid].set_result((participant.secret_share1, participant.secret_share2))
+
+        if sfid not in public_key_share_futures:
+            public_key_share_futures[sfid] = asyncio.Future()
+            if participant.public_key_share is not None:
+                public_key_share_futures[sfid].set_result(participant.public_key_share)
+
         return participant
 
 
     def to_state_message(self, address: int = None) -> dict:
-        msg = { attr: getattr(self, attr) for attr in ('decryption_condition', 'phase', 'threshold') }
-        msg['participants'] = {'{:040x}'.format(int.from_bytes(p.eth_address, byteorder='big')): p.to_state_message() for p in self.participants}
+        global own_address
+
+        msg = {'address': '{:040x}'.format(own_address)}
+
+        for attr in ('decryption_condition', 'phase', 'threshold'):
+            val = getattr(self, attr)
+            if val is not None:
+                msg[attr] = val
+
+        msg['participants'] = {'{:040x}'.format(p.eth_address): p.to_state_message() for p in self.participants}
+
+        for attr in ('alt_generator', 'public_key', 'alt_generator_part', 'public_key_share'):
+            val = getattr(self, attr)
+            if val is not None:
+                msg[attr] = '{0[0]:064x}{0[1]:064x}'.format(val)
+
+        vpts = self.verification_points
+        if vpts is not None:
+            msg['verification_points'] = tuple('{0[0]:064x}{0[1]:064x}'.format(pt) for pt in vpts)
+
         return msg
 
 
@@ -94,12 +135,31 @@ class ECDKGParticipant(db.Base):
 
     alt_generator_part = db.Column(db.CurvePoint)
     public_key_share = db.Column(db.CurvePoint)
-    verification_shares = db.Column(db.CurvePointTuple)
+    verification_points = db.Column(db.CurvePointTuple)
     secret_share1 = db.Column(db.PrivateValue)
     secret_share2 = db.Column(db.PrivateValue)
     __table_args__ = (db.UniqueConstraint('ecdkg_id', 'eth_address'),)
 
 
     def to_state_message(self, address: int = None) -> dict:
-        msg = { attr: getattr(self, attr) for attr in ('alt_generator_part', 'public_key_share', 'verification_shares') }
+        msg = {}
+
+        for attr in ('alt_generator_part', 'public_key_share', 'verification_points'):
+            val = getattr(self, attr)
+            if val is not None:
+                msg[attr] = '{0[0]:064x}{0[1]:064x}'.format(val)
+
         return msg
+
+
+    def update_with_ecdkg_state_message(self, state: 'ECDKG state'):
+        if 'alt_generator_part' in state:
+            altgenpt = tuple(int(state['alt_generator_part'][i:i+64], 16) for i in (0, 64))
+            if getattr(self, 'alt_generator_part') not in (None, altgenpt):
+                logging.error('changing participant alt generator part!')
+            self.alt_generator_part = altgenpt
+
+        if 'verification_points' in state:
+            vpts = tuple(tuple(int(ptstr[i:i+64], 16) for i in (0, 64)) for ptstr in state['verification_points'])
+            self.verification_points = vpts
+            assert(tuple('{0[0]:064x}{0[1]:064x}'.format(pt) for pt in vpts) == tuple(state['verification_points']))

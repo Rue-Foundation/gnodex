@@ -6,6 +6,7 @@ import logging
 import os
 import ssl
 import tempfile
+import uuid
 
 from http.server import BaseHTTPRequestHandler
 
@@ -58,6 +59,7 @@ class HTTPRequest(BaseHTTPRequestHandler):
 ssl_context = None
 channels = {}
 default_dispatcher = rpc_interface.create_dispatcher()
+response_futures = collections.OrderedDict()
 
 
 def set_ssl_using_key(private_key: int) -> ssl.SSLContext:
@@ -116,10 +118,11 @@ async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writ
         channels[eth_address] = {}
 
     if 'writer' in channels[eth_address]:
-        logging.warn('channel for {} already exists; closing existing channel...'.format(hex(eth_address)))
+        logging.debug('channel for {} already exists; reestablishing channel...'.format(hex(eth_address)))
         channels[eth_address]['writer'].close()
+    else:
+        logging.info('establishing new channel for {}'.format(hex(eth_address)))
 
-    logging.info('establishing channel for {}'.format(hex(eth_address)))
     channels[eth_address]['reader'] = reader
     channels[eth_address]['writer'] = writer
     channels[eth_address]['rpcdispatcher'] = rpc_interface.create_dispatcher(eth_address)
@@ -127,8 +130,28 @@ async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writ
         channels[eth_address]['location'] = location
 
     try:
-        async for obj in json_lines_with_timeout(reader):
-            logging.info('received message {} from {}'.format(obj, hex(eth_address)))
+        async for msg in json_lines_with_timeout(reader):
+            logging.debug('received message {} from {}'.format(msg, hex(eth_address)))
+            if msg is None:
+                logging.warning('message should not be None!')
+            elif 'method' in msg:
+                res = JSONRPCResponseManager.handle(json.dumps(msg), channels[eth_address]['rpcdispatcher'])
+                if res is not None:
+                    res_data = await get_response_data(res)
+                    writer.write(json.dumps(res_data).encode())
+                    writer.write(b'\n')
+            elif 'id' in msg:
+                fut_id = msg['id']
+                if fut_id in response_futures:
+                    response_future = response_futures.pop(fut_id)
+                    if 'result' in msg:
+                        response_future.set_result(msg['result'])
+                    elif 'error' in msg:
+                        response_future.set_exception(msg['error'])
+                    else:
+                        response_future.cancel()
+                else:
+                    logging.warning('Response with id {} has no corresponding future'.format(fut_id))
     except asyncio.TimeoutError:
         logging.warn('channel for {} timed out'.format(hex(eth_address)))
     finally:
@@ -137,6 +160,41 @@ async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writ
             logging.info('removing channel for {}'.format(hex(eth_address)))
             del channels[eth_address]['reader']
             del channels[eth_address]['writer']
+
+
+def make_jsonrpc_call(cinfo: 'channel info',
+                      method_name: str, *args,
+                      is_notification: bool = False,
+                      loop: asyncio.AbstractEventLoop = None):
+    if loop is None:
+        loop = asyncio.get_event_loop()
+
+    if 'writer' in cinfo:
+        msg = { 'method': method_name,
+                'params': args,
+                'jsonrpc': '2.0' }
+
+        if not is_notification:
+            reqid = str(uuid.uuid4())
+            msg['id'] = reqid
+            response_futures[reqid] = asyncio.Future(loop=loop)
+
+        writer = cinfo['writer']
+        writer.write(json.dumps(msg).encode())
+        writer.write(b'\n')
+
+        if not is_notification:
+            return response_futures[reqid]
+
+
+async def get_response_data(res: 'jsonrpc response', timeout: 'seconds' = DEFAULT_TIMEOUT) -> dict:
+    if res is not None:
+        res_data = res.data
+        if 'result' in res_data:
+            if (asyncio.iscoroutine(res_data['result']) or
+                isinstance(res_data['result'], asyncio.Future)):
+                res_data['result'] = await asyncio.wait_for(res_data['result'], timeout)
+        return res_data
 
 
 ################################################################################
@@ -159,7 +217,7 @@ async def server(host: str, port: int, *,
         try:
             cliipaddr = writer.get_extra_info('peername')
             ownipaddr = writer.get_extra_info('sockname')
-            logging.info('{} <-- {}'.format(ownipaddr, cliipaddr))
+            logging.debug('{} <-- {}'.format(ownipaddr, cliipaddr))
 
             protocol_indicator = await asyncio.wait_for(reader.read(4), timeout)
 
@@ -202,17 +260,12 @@ async def server(host: str, port: int, *,
                     req.body = await reader.read(contentlen)
 
                 res = JSONRPCResponseManager.handle(req.body, default_dispatcher)
+                res_data = await get_response_data(res, timeout)
                 db.Session.remove()
 
-                if res is None:
+                if res_data is None:
                     writer.write(b'HTTP/1.1 204 No Content\r\n\r\n')
                 else:
-                    res_data = res.data
-                    if 'result' in res_data:
-                        if (asyncio.iscoroutine(res_data['result']) or
-                            isinstance(res_data['result'], asyncio.Future)):
-                            res_data['result'] = await asyncio.wait_for(res_data['result'], timeout)
-
                     res_str = json.dumps(res_data, indent=2, sort_keys=True).encode('UTF-8')
 
                     writer.write(b'HTTP/1.1 200 OK\r\n'
@@ -252,7 +305,7 @@ async def attempt_to_establish_channel(host: str, port: int, *,
         else:
             srvipaddr = writer.get_extra_info('peername')
             ownipaddr = writer.get_extra_info('sockname')
-            logging.info('{} --> {}'.format(ownipaddr, srvipaddr))
+            logging.debug('{} --> {}'.format(ownipaddr, srvipaddr))
             break
     else:
         logging.warning('could not connect to {}:{} after {} tries'.format(host, port, num_tries))
