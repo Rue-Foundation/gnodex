@@ -207,7 +207,7 @@ async def server(host: str, port: int, *,
                 if res is None:
                     writer.write(b'HTTP/1.1 204 No Content\r\n\r\n')
                 else:
-                    res_str = res.json.encode('UTF-8')
+                    res_str = json.dumps(res.data, indent=2, sort_keys=True).encode('UTF-8')
 
                     writer.write(b'HTTP/1.1 200 OK\r\n'
                                  b'Content-Type: application/json; charset=UTF-8\r\n'

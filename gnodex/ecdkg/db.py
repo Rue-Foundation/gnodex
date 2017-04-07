@@ -4,6 +4,7 @@ import sqlalchemy.types as types
 from sqlalchemy import create_engine
 from sqlalchemy.orm import scoped_session, sessionmaker, relationship
 from sqlalchemy import Column, Integer, String, Enum, ForeignKey
+from sqlalchemy.schema import UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
 
 from . import util
