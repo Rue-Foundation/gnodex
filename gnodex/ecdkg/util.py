@@ -1,7 +1,10 @@
+import asyncio
 import functools
 import logging
 import os
 import re
+
+from datetime import datetime
 
 import bitcoin
 import sha3
@@ -57,7 +60,7 @@ def validate_signature(signature: 'rsv triplet'):
         raise ValueError('invalid signature {}'.format(signature))
 
 
-def normalize_decryption_condition(deccond: str) -> str:
+def normalize_decryption_condition(deccond: str, return_obj: bool = False):
     prefix = 'past '
     if deccond.startswith(prefix):
         try:
@@ -72,9 +75,19 @@ def normalize_decryption_condition(deccond: str) -> str:
         # Strip out subsecond info and make naive
         dt = dt.replace(microsecond=0, tzinfo=None)
 
+        if return_obj:
+            return (prefix, dt)
+
         return prefix + dt.isoformat()
 
     raise ValueError('invalid decryption condition {}'.format(deccond))
+
+
+async def decryption_condition_satisfied(deccond: str) -> bool:
+    prefix, obj = normalize_decryption_condition(deccond, True)
+    if prefix == 'past ':
+        while datetime.utcnow() < obj:
+            await asyncio.sleep(max(0, (obj - datetime.utcnow()).total_seconds()))
 
 
 def sequence_256_bit_values_to_bytes(sequence: tuple) -> bytes:

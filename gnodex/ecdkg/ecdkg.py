@@ -50,6 +50,7 @@ class ECDKG(db.Base):
     threshold = db.Column(db.Integer)
     alt_generator = db.Column(db.CurvePoint)
     encryption_key = db.Column(db.CurvePoint)
+    decryption_key = db.Column(db.PrivateValue)
     participants = db.relationship('ECDKGParticipant', back_populates='ecdkg')
 
     alt_generator_part = db.Column(db.CurvePoint)
@@ -135,6 +136,7 @@ class ECDKGParticipant(db.Base):
 
     alt_generator_part = db.Column(db.CurvePoint)
     encryption_key_part = db.Column(db.CurvePoint)
+    decryption_key_part = db.Column(db.PrivateValue)
     verification_points = db.Column(db.CurvePointTuple)
     secret_share1 = db.Column(db.PrivateValue)
     secret_share2 = db.Column(db.PrivateValue)

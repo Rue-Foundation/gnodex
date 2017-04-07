@@ -155,10 +155,43 @@ def create_dispatcher(address: int = None):
             ecdkg_obj.encryption_key = functools.reduce(bitcoin.fast_add,
                 (p.encryption_key_part for p in ecdkg_obj.participants), ecdkg_obj.encryption_key_part)
 
+            ecdkg_obj.phase == ecdkg.ECDKGPhase.key_publication
+
             db.Session.commit()
 
         return '{0[0]:064x}{0[1]:064x}'.format(ecdkg_obj.encryption_key)
 
+
+    @dispatcher_add_async_method
+    async def get_decryption_key_part(decryption_condition):
+        await get_encryption_key(decryption_condition)
+        await util.decryption_condition_satisfied(decryption_condition)
+        ecdkg_obj = ecdkg.ECDKG.get_or_create_by_decryption_condition(decryption_condition)
+        return '{:064x}'.format(ecdkg_obj.secret_poly1[0])
+
+
+    @dispatcher_add_async_method
+    async def get_decryption_key(decryption_condition):
+        await get_encryption_key(decryption_condition)
+        await util.decryption_condition_satisfied(decryption_condition)
+
+        ecdkg_obj = ecdkg.ECDKG.get_or_create_by_decryption_condition(decryption_condition)
+
+        if ecdkg_obj.decryption_key is None:
+            for participant in ecdkg_obj.participants:
+                address = participant.eth_address
+                if address in networking.channels:
+                    cinfo = networking.channels[address]
+                    res = await networking.make_jsonrpc_call(cinfo, 'get_decryption_key_part',
+                        decryption_condition)
+                    print(res)
+                    participant.decryption_key_part = int(res, 16)
+
+            ecdkg_obj.decryption_key = (sum(p.decryption_key_part for p in ecdkg_obj.participants) + ecdkg_obj.secret_poly1[0]) % bitcoin.N
+
+            db.Session.commit()
+
+        return '{:064x}'.format(ecdkg_obj.decryption_key)
 
 
     if address is not None:
