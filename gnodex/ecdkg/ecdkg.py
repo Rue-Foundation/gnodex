@@ -14,7 +14,7 @@ COMS_TIMEOUT = .5
 THRESHOLD_FACTOR = .5
 
 secret_share_futures = collections.OrderedDict()
-public_key_share_futures = collections.OrderedDict()
+encryption_key_part_futures = collections.OrderedDict()
 
 
 def random_polynomial(order: int) -> tuple:
@@ -49,14 +49,14 @@ class ECDKG(db.Base):
     phase = db.Column(db.Enum(ECDKGPhase), nullable=False, default=ECDKGPhase.uninitialized)
     threshold = db.Column(db.Integer)
     alt_generator = db.Column(db.CurvePoint)
-    public_key = db.Column(db.CurvePoint)
+    encryption_key = db.Column(db.CurvePoint)
     participants = db.relationship('ECDKGParticipant', back_populates='ecdkg')
 
     alt_generator_part = db.Column(db.CurvePoint)
     secret_poly1 = db.Column(db.Polynomial)
     secret_poly2 = db.Column(db.Polynomial)
     verification_points = db.Column(db.CurvePointTuple)
-    public_key_share = db.Column(db.CurvePoint)
+    encryption_key_part = db.Column(db.CurvePoint)
 
 
     @classmethod
@@ -96,10 +96,10 @@ class ECDKG(db.Base):
                 participant.secret_share2 is not None):
                 secret_share_futures[sfid].set_result((participant.secret_share1, participant.secret_share2))
 
-        if sfid not in public_key_share_futures:
-            public_key_share_futures[sfid] = asyncio.Future()
-            if participant.public_key_share is not None:
-                public_key_share_futures[sfid].set_result(participant.public_key_share)
+        if sfid not in encryption_key_part_futures:
+            encryption_key_part_futures[sfid] = asyncio.Future()
+            if participant.encryption_key_part is not None:
+                encryption_key_part_futures[sfid].set_result(participant.encryption_key_part)
 
         return participant
 
@@ -116,7 +116,7 @@ class ECDKG(db.Base):
 
         msg['participants'] = {'{:040x}'.format(p.eth_address): p.to_state_message() for p in self.participants}
 
-        for attr in ('alt_generator', 'public_key', 'alt_generator_part', 'public_key_share'):
+        for attr in ('alt_generator', 'encryption_key', 'alt_generator_part', 'encryption_key_part'):
             val = getattr(self, attr)
             if val is not None:
                 msg[attr] = '{0[0]:064x}{0[1]:064x}'.format(val)
@@ -134,7 +134,7 @@ class ECDKGParticipant(db.Base):
     eth_address = db.Column(db.EthAddress, index=True)
 
     alt_generator_part = db.Column(db.CurvePoint)
-    public_key_share = db.Column(db.CurvePoint)
+    encryption_key_part = db.Column(db.CurvePoint)
     verification_points = db.Column(db.CurvePointTuple)
     secret_share1 = db.Column(db.PrivateValue)
     secret_share2 = db.Column(db.PrivateValue)
@@ -144,7 +144,7 @@ class ECDKGParticipant(db.Base):
     def to_state_message(self, address: int = None) -> dict:
         msg = {}
 
-        for attr in ('alt_generator_part', 'public_key_share', 'verification_points'):
+        for attr in ('alt_generator_part', 'encryption_key_part', 'verification_points'):
             val = getattr(self, attr)
             if val is not None:
                 msg[attr] = '{0[0]:064x}{0[1]:064x}'.format(val)
@@ -158,6 +158,12 @@ class ECDKGParticipant(db.Base):
             if getattr(self, 'alt_generator_part') not in (None, altgenpt):
                 logging.error('changing participant alt generator part!')
             self.alt_generator_part = altgenpt
+
+        if 'encryption_key_part' in state:
+            enc_key_part = tuple(int(state['encryption_key_part'][i:i+64], 16) for i in (0, 64))
+            if getattr(self, 'encryption_key_part') not in (None, enc_key_part):
+                logging.error('changing encryption key part!')
+            self.encryption_key_part = enc_key_part
 
         if 'verification_points' in state:
             vpts = tuple(tuple(int(ptstr[i:i+64], 16) for i in (0, 64)) for ptstr in state['verification_points'])

@@ -86,7 +86,6 @@ def create_dispatcher(address: int = None):
 
             ecdkg_obj.phase = ecdkg.ECDKGPhase.key_distribution
             ecdkg_obj.verification_points = tuple(bitcoin.fast_add(bitcoin.fast_multiply(bitcoin.G, a), bitcoin.fast_multiply(ecdkg_obj.alt_generator, b)) for a, b in zip(spoly1, spoly2))
-            # assert(ecdkg_obj.verification_points == tuple(ecdkg.generate_public_shares(ecdkg_obj.alt_generator, spoly1, spoly2)))
 
             db.Session.commit()
 
@@ -140,39 +139,39 @@ def create_dispatcher(address: int = None):
             db.Session.commit()
 
         if ecdkg_obj.phase == ecdkg.ECDKGPhase.key_generation:
-            ecdkg_obj.public_key_share = bitcoin.fast_multiply(bitcoin.G, ecdkg_obj.secret_poly1[0])
+            ecdkg_obj.encryption_key_part = bitcoin.fast_multiply(bitcoin.G, ecdkg_obj.secret_poly1[0])
 
             for participant in ecdkg_obj.participants:
                 address = participant.eth_address
                 if address in networking.channels:
                     cinfo = networking.channels[address]
-                    networking.make_jsonrpc_call(cinfo, 'receive_public_key_share',
+                    networking.make_jsonrpc_call(cinfo, 'receive_encryption_key_part',
                         decryption_condition,
-                        '{0[0]:064x}{0[1]:064x}'.format(ecdkg_obj.public_key_share),
+                        '{0[0]:064x}{0[1]:064x}'.format(ecdkg_obj.encryption_key_part),
                         is_notification = True)
 
-            await asyncio.wait([ecdkg.public_key_share_futures[sfid] for sfid in ((ecdkg_obj.id, p.eth_address) for p in ecdkg_obj.participants) if sfid in ecdkg.public_key_share_futures], timeout=ecdkg.COMS_TIMEOUT)
+            await asyncio.wait([ecdkg.encryption_key_part_futures[sfid] for sfid in ((ecdkg_obj.id, p.eth_address) for p in ecdkg_obj.participants) if sfid in ecdkg.encryption_key_part_futures], timeout=ecdkg.COMS_TIMEOUT)
 
-            ecdkg_obj.public_key = functools.reduce(bitcoin.fast_add,
-                (p.public_key_share for p in ecdkg_obj.participants), ecdkg_obj.public_key_share)
+            ecdkg_obj.encryption_key = functools.reduce(bitcoin.fast_add,
+                (p.encryption_key_part for p in ecdkg_obj.participants), ecdkg_obj.encryption_key_part)
 
             db.Session.commit()
 
-        return '{0[0]:064x}{0[1]:064x}'.format(ecdkg_obj.public_key)
+        return '{0[0]:064x}{0[1]:064x}'.format(ecdkg_obj.encryption_key)
 
 
 
     if address is not None:
         @dispatcher.add_method
-        def receive_public_key_share(decryption_condition, pubkey):
+        def receive_encryption_key_part(decryption_condition, pubkey):
             ecdkg_obj = ecdkg.ECDKG.get_or_create_by_decryption_condition(decryption_condition)
             participant = ecdkg_obj.get_or_create_participant_by_address(address)
-            participant.public_key_share = tuple(int(pubkey[i:i+64], 16) for i in (0, 64))
+            participant.encryption_key_part = tuple(int(pubkey[i:i+64], 16) for i in (0, 64))
             sfid = (ecdkg_obj.id, participant.eth_address)
-            if sfid in ecdkg.public_key_share_futures:
-                pubkfut = ecdkg.public_key_share_futures[sfid]
+            if sfid in ecdkg.encryption_key_part_futures:
+                pubkfut = ecdkg.encryption_key_part_futures[sfid]
                 if not pubkfut.done():
-                    pubkfut.set_result(participant.public_key_share)
+                    pubkfut.set_result(participant.encryption_key_part)
             db.Session.commit()
 
 
