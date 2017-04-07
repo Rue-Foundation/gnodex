@@ -83,6 +83,7 @@ class ECDKG(db.Base):
 
     def to_state_message(self, address: int = None) -> dict:
         msg = { attr: getattr(self, attr) for attr in ('decryption_condition', 'phase', 'threshold') }
+        msg['participants'] = {'{:040x}'.format(int.from_bytes(p.eth_address, byteorder='big')): p.to_state_message() for p in self.participants}
         return msg
 
 
@@ -100,4 +101,5 @@ class ECDKGParticipant(db.Base):
 
 
     def to_state_message(self, address: int = None) -> dict:
-        return {}
+        msg = { attr: getattr(self, attr) for attr in ('alt_generator_part', 'public_key_share', 'verification_shares') }
+        return msg
