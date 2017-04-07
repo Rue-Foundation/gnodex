@@ -10,7 +10,7 @@ import bitcoin
 from . import db, util
 
 
-COMS_TIMEOUT = .5
+COMS_TIMEOUT = 10
 THRESHOLD_FACTOR = .5
 
 secret_share_futures = collections.OrderedDict()
