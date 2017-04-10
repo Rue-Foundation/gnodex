@@ -4,8 +4,10 @@ import threading
 import certs
 from cryptography.exceptions import InvalidSignature
 from models import SignedBatch, Signature
-from util import crypto, ssl_context, merkle_helper
-from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg
+from util import crypto, merkle_helper
+from jsonrpc import dispatcher
+from util.rpc import rpc_response, rpc_param_decode, handle_rpc_client
+
 
 def signer_service(args):
     global private_key
@@ -33,8 +35,10 @@ def signer_service(args):
     print("Gnodex Signing Service %d Started" % instance_id)
     while True:
         try:
-            new_sock, addr = sock.accept()
-            thread = threading.Thread(target=handle_client, args=(new_sock, addr))
+            new_sock = sock.accept()[0]
+            thread = threading.Thread(
+                target=handle_rpc_client,
+                args=(new_sock, certs.path_to('server.crt'), certs.path_to('server.key'), dispatcher))
             thread.start()
         except KeyboardInterrupt:
             print("Signing Service %d Exit." % instance_id)
@@ -42,12 +46,10 @@ def signer_service(args):
             break
 
 
-def handle_client(sock, addr):
-    ssl_sock = ssl_context.wrap_server_socket(sock, certs.path_to('server.crt'), certs.path_to('server.key'))
-
-    # Receive batch
-    data =  recv_ssl_msg(ssl_sock)
-    signed_batch = rlp.decode(data, SignedBatch)
+@dispatcher.add_method
+def receive_batch(signed_batch_rlp_rpc):
+    signed_batch_rlp = rpc_param_decode(signed_batch_rlp_rpc)
+    signed_batch = rlp.decode(signed_batch_rlp, SignedBatch)
     print("BATCH RECEIVED")
     batch = signed_batch.batch
     commitment = batch.commitment
@@ -73,6 +75,5 @@ def handle_client(sock, addr):
     finally:
         # Return result
         signature = Signature('signer_%d' % instance_id, commitment_signature)
-        with ssl_sock:
-            send_ssl_msg(ssl_sock, rlp.encode(signature))
         print("RESPONSE SENT")
+        return rpc_response(rlp.encode(signature))
