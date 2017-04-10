@@ -4,10 +4,10 @@ import threading
 import certs
 from cryptography.exceptions import InvalidSignature
 from models import *
-from util import crypto, ssl_context, merkle_helper
-from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg, ssl_connect
-from jsonrpc import JSONRPCResponseManager, dispatcher
-from util.rpc import rpc_response, rpc_param_decode
+from util import crypto, merkle_helper
+from util.ssl_sock_helper import ssl_connect
+from jsonrpc import dispatcher
+from util.rpc import rpc_call_rlp, rpc_response, rpc_param_decode, handle_rpc_client
 
 
 def master_state_service(args):
@@ -42,29 +42,17 @@ def master_state_service(args):
     last_order_digest_list = list()
 
     # Create order batch submission timer
-    t = threading.Timer(interval=10.0, function=send_batch)
+    t = threading.Timer(interval=10.0, function=send_batch_to_signer_services)
     t.start()
 
     # Accept connections and start handling them in own thread
     print("Gnodex Master State Server Started")
     while True:
-        new_sock, addr = sock.accept()
-        thread = threading.Thread(target=handle_client, args=(new_sock, addr))
+        new_sock = sock.accept()[0]
+        thread = threading.Thread(
+            target=handle_rpc_client,
+            args=(new_sock, certs.path_to('server.crt'), certs.path_to('server.key'), dispatcher))
         thread.start()
-
-
-# One thread per client
-def handle_client(sock, addr):
-    ssl_sock = ssl_context.wrap_server_socket(sock, certs.path_to('server.crt'), certs.path_to('server.key'))
-
-    # Wait for input, and respond
-    while True:
-        rpc_input = recv_ssl_msg(ssl_sock)
-        rpc_output = JSONRPCResponseManager.handle(rpc_input.decode(), dispatcher)
-        print(rpc_output)
-        if rpc_output != None:
-            print(rpc_output.json)
-            send_ssl_msg(ssl_sock, rpc_output.json.encode())
 
 
 @dispatcher.add_method
@@ -126,7 +114,7 @@ static_signers = [
 
 
 # Send off current batch to signing services
-def send_batch():
+def send_batch_to_signer_services():
     global orders
     global current_round
     global last_signed_batch
@@ -159,9 +147,7 @@ def send_batch():
 
                 with ssl_sock:
                     print("CONNECTED TO SIGNER")
-                    send_ssl_msg(ssl_sock, signed_batch_rlp)
-                    response = recv_ssl_msg(ssl_sock)
-                    signature = rlp.decode(response, Signature)
+                    signature = send_signed_batch(ssl_sock, signed_batch_rlp)
 
                     signer_public_key = crypto.load_public_cert_key(certs.path_to('server.crt'))
 
@@ -180,5 +166,13 @@ def send_batch():
             orders = list()
             current_round += 1
     # Create order batch submission timer
-    t = threading.Timer(interval=10.0, function=send_batch)
+    t = threading.Timer(interval=10.0, function=send_batch_to_signer_services)
     t.start()
+
+
+def send_signed_batch(ssl_sock, signed_batch_rlp: SignedBatch):
+    signature_rlp = rpc_call_rlp(
+        ssl_sock,
+        "receive_batch",
+        { "signed_batch_rlp_rpc": signed_batch_rlp })
+    return rlp.decode(signature_rlp, Signature)
