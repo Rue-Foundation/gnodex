@@ -1,11 +1,11 @@
 import socket
 import rlp
 import threading
-import certs
 from cryptography.exceptions import InvalidSignature
-from models import *
-from util import crypto, ssl_context, merkle_helper
-from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg, ssl_connect
+from .. import certs
+from ..models import *
+from ..util import crypto, ssl_context, merkle_helper
+from ..util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg, ssl_connect
 
 
 def master_state_service(args):

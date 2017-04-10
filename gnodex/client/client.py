@@ -2,13 +2,14 @@ import threading
 import pprint
 import sys
 import rlp
-import certs
 import parse
 import merkle
+from  .. import certs
 from cryptography.exceptions import InvalidSignature
-from models import Order, SignedOrder, SignedReceipt, Chain, ChainLink
-from util import crypto
-from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg, ssl_connect, recv_ssl_msg_timeout
+from ..models import Order, SignedOrder, SignedReceipt, Chain, ChainLink
+from ..util import crypto
+from ..util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg, ssl_connect, recv_ssl_msg_timeout
+
 
 def trade_client(args):
     global public_key
