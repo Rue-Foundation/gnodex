@@ -5,3 +5,4 @@ pysha3
 rlp
 merkle
 sqlalchemy
+json-rpc

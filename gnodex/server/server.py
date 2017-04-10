@@ -6,6 +6,8 @@ from cryptography.exceptions import InvalidSignature
 from models import *
 from util import crypto, ssl_context, merkle_helper
 from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg, ssl_connect
+from jsonrpc import JSONRPCResponseManager, dispatcher
+from util.rpc import rpc_response, rpc_param_decode
 
 
 def master_state_service(args):
@@ -57,22 +59,22 @@ def handle_client(sock, addr):
 
     # Wait for input, and respond
     while True:
-        # Receive order
-        data = recv_ssl_msg(ssl_sock)
-        if data == 'CONFREQ'.encode('UTF-8'):
-            return_confirmation(ssl_sock)
-            break
-        else:
-            receive_order(ssl_sock, data)
+        rpc_input = recv_ssl_msg(ssl_sock)
+        rpc_output = JSONRPCResponseManager.handle(rpc_input.decode(), dispatcher)
+        print(rpc_output)
+        if rpc_output != None:
+            print(rpc_output.json)
+            send_ssl_msg(ssl_sock, rpc_output.json.encode())
 
 
-def return_confirmation(ssl_sock):
+@dispatcher.add_method
+def return_confirmation(signed_receipt_rlp_rpc):
     global order_list_lock
 
-    signed_receipt_rlp = recv_ssl_msg(ssl_sock)
+    signed_receipt_rlp = rpc_param_decode(signed_receipt_rlp_rpc)
     signed_receipt = rlp.decode(signed_receipt_rlp, SignedReceipt)
     receipt = signed_receipt.receipt
-    with order_list_lock, ssl_sock:
+    with order_list_lock:
         try:
             crypto.verify(public_key, rlp.encode(receipt), signed_receipt.signature)
             print("RECEIPT SIGNATURE OK!")
@@ -90,28 +92,30 @@ def return_confirmation(ssl_sock):
             chain_links = [ChainLink(value, side) for (value, side) in last_merkle_tree.get_chain(idx)]
             chain = Chain(chain_links)
             # TODO Sign This Response
-            send_ssl_msg(ssl_sock, rlp.encode(chain))
             print("ORDER CONFIRMATION SENT")
+            return rpc_response(rlp.encode(chain))
         except InvalidSignature:
             print("RECEIPT SIGNATURE VERIFICATION FAILED!!")
 
 
-def receive_order(ssl_sock, data):
-    order = rlp.decode(data, SignedOrder)
+@dispatcher.add_method
+def receive_order(signed_order_rlp_rpc):
+    signed_order_rlp = rpc_param_decode(signed_order_rlp_rpc)
+    signed_order = rlp.decode(signed_order_rlp, SignedOrder)
     print("ORDER RECEIVED")
     receipt_round = None
     with order_list_lock:
-        orders.append(order)
+        orders.append(signed_order)
         receipt_round = current_round
     # Create Receipt
-    order_hash = crypto.sha256_utf8(data)
+    order_hash = crypto.sha256_utf8(signed_order_rlp)
     receipt = Receipt(receipt_round, order_hash)
     # Create Signed Receipt
     receipt_hash_signed = crypto.sign_rlp(private_key, receipt)
     signed_receipt = SignedReceipt(receipt, receipt_hash_signed)
     # Send response
-    send_ssl_msg(ssl_sock, rlp.encode(signed_receipt))
     print("RECEIPT SENT")
+    return rpc_response(rlp.encode(signed_receipt))
 
 
 static_signers = [
