@@ -4,11 +4,12 @@ import sys
 import rlp
 import parse
 import merkle
-from  .. import certs
 from cryptography.exceptions import InvalidSignature
+from  .. import certs
 from ..models import Order, SignedOrder, SignedReceipt, Chain, ChainLink
 from ..util import crypto
 from ..util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg, ssl_connect, recv_ssl_msg_timeout
+from ..util.rpc import rpc_call_rlp
 
 
 def trade_client(args):
@@ -49,14 +50,13 @@ def trade_client(args):
             continue
 
         signed_order = SignedOrder(order, crypto.sign_rlp(private_key, order))
-        signed_order_rlp_encoded = rlp.encode(signed_order)
-        # TODO: Encrypt order with DKG Key
-        send_ssl_msg(ssl_sock, signed_order_rlp_encoded)
+        signed_order_rlp = rlp.encode(signed_order)
         # Receive signature from state server
-        signed_receipt = rlp.decode(recv_ssl_msg(ssl_sock), SignedReceipt)
+        # TODO: Encrypt order with DKG Key
+        signed_receipt = send_signed_order(ssl_sock, signed_order_rlp)
 
         # Verify Signed Order
-        order_hash = crypto.sha256_utf8(signed_order_rlp_encoded)
+        order_hash = crypto.sha256_utf8(signed_order_rlp)
         receipt_order_digest = signed_receipt.receipt.order_digest
         if (order_hash != receipt_order_digest):
             print("INVALID ORDER HASH!")
@@ -75,15 +75,22 @@ def trade_client(args):
             print("SIGNATURE VERIFICATION FAILED!!")
 
 
+def send_signed_order(ssl_sock, signed_order_rlp: SignedOrder):
+    signed_receipt_rlp = rpc_call_rlp(
+        ssl_sock,
+        "receive_order",
+        { "signed_order_rlp_rpc": signed_order_rlp })
+    return rlp.decode(signed_receipt_rlp, SignedReceipt)
+
+
 def request_membership_verification(signed_receipt: SignedReceipt):
     print("ASKING FOR VERIFICATION")
     confirmed = False
     try:
         ssl_sock = ssl_connect(('localhost', 31337), certs.path_to('server.crt'))
-        send_ssl_msg(ssl_sock, 'CONFREQ'.encode('UTF-8'))
-        send_ssl_msg(ssl_sock, rlp.encode(signed_receipt))
-        data = recv_ssl_msg_timeout(ssl_sock)
-        chain = rlp.decode(data, Chain)
+        chain = send_verification_request(ssl_sock, rlp.encode(signed_receipt))
+        if not chain:
+            return
         chain_links = [(link.value, link.side) for link in chain.links]
         # TODO: Cry about missing n out of m signatures
         confirmed = merkle.check_chain(chain_links)
@@ -101,3 +108,13 @@ def request_membership_verification(signed_receipt: SignedReceipt):
             t.start()
         else:
             print("ORDER CONFIRMATION RECEIVED!!!")
+
+
+def send_verification_request(ssl_sock, signed_receipt_rlp):
+    chain_rlp = rpc_call_rlp(
+        ssl_sock,
+        "return_confirmation",
+        { "signed_receipt_rlp_rpc": signed_receipt_rlp },
+        default_timeout=True)
+    print(chain_rlp)
+    return rlp.decode(chain_rlp, Chain) if chain_rlp else None
