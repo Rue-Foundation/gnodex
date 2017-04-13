@@ -11,6 +11,8 @@ import time
 from contextlib import ExitStack, contextmanager
 from datetime import datetime
 
+import pytest
+
 from gnodex.ecdkg import util
 
 
@@ -36,8 +38,8 @@ def Popen_with_interrupt_at_exit(cmdargs, *args, **kwargs):
                     except subprocess.TimeoutExpired:
                         continue
 
-
-def test_nodes_match_state():
+@pytest.fixture
+def nodes():
     subprocess.check_call((BIN_NAME, '-h'), stdout=subprocess.DEVNULL)
     with ExitStack() as exitstack:
         proc_dir = exitstack.enter_context(tempfile.TemporaryDirectory())
@@ -67,7 +69,10 @@ def test_nodes_match_state():
         # TODO: Figure out how to sleep until ports are bound
         time.sleep(2)
 
-        # THIS IS WHERE STUFF HAPPENS
+        yield
+
+
+def test_nodes_match_state(nodes):
         node_ids = util.random.sample(range(NUM_SUBPROCESSES), 2)
         responses = [requests.post('https://localhost:{}'.format(PORTS_START + nid),
             verify=False,
