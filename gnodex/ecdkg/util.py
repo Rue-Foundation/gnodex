@@ -94,6 +94,10 @@ def sequence_256_bit_values_to_bytes(sequence: tuple) -> bytes:
     return b''.join(map(functools.partial(int.to_bytes, length=32, byteorder='big'), sequence))
 
 
+def private_value_to_eth_address(private_value: int) -> int:
+    return curve_point_to_eth_address(bitcoin.fast_multiply(bitcoin.G, private_value))
+
+
 def curve_point_to_eth_address(curve_point: (int, int)) -> int:
     return int.from_bytes(sha3.keccak_256(sequence_256_bit_values_to_bytes(curve_point)).digest()[-20:], byteorder='big')
 

@@ -4,6 +4,7 @@ json-rpc
 parse
 pysha3
 python-dateutil
+requests
 rlp
 merkle
 sqlalchemy
