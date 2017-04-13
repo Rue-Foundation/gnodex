@@ -75,13 +75,26 @@ def nodes():
 
 
 def test_nodes_match_state(nodes):
-        node_ids = range(NUM_SUBPROCESSES)
-        responses = [requests.post('https://localhost:{}'.format(PORTS_START + nid),
-            verify=False,
-            data=json.dumps({
-                'id': 'honk',
-                'method': 'get_ecdkg_state',
-                'params': ['past {}'.format(datetime.utcnow().isoformat())],
-            })) for nid in node_ids]
+    node_ids = range(NUM_SUBPROCESSES)
+    deccond = 'past {}'.format(datetime.utcnow().isoformat())
+    responses = [requests.post('https://localhost:{}'.format(PORTS_START + nid),
+        verify=False,
+        data=json.dumps({
+            'id': 'honk',
+            'method': 'get_ecdkg_state',
+            'params': [deccond],
+        })) for nid in node_ids]
 
-        assert(all(r.json()['result']['decryption_condition'] == responses[0].json()['result']['decryption_condition'] for r in responses[1:]))
+    assert(all(r.json()['result']['decryption_condition'] == responses[0].json()['result']['decryption_condition'] for r in responses[1:]))
+
+
+def test_nodes_match_pubkey(nodes):
+    node_ids = range(NUM_SUBPROCESSES)
+    deccond = 'past {}'.format(datetime.utcnow().isoformat())
+    responses = [requests.post('https://localhost:{}'.format(PORTS_START + nid),
+        verify=False,
+        data=json.dumps({
+            'id': 'honk',
+            'method': 'get_encryption_key',
+            'params': [deccond],
+        })) for nid in node_ids]
