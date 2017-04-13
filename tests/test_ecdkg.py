@@ -6,11 +6,11 @@ import requests
 import signal
 import subprocess
 import tempfile
-import time
 
 from contextlib import ExitStack, contextmanager
 from datetime import datetime
 
+import psutil
 import pytest
 
 from gnodex.ecdkg import util
@@ -25,10 +25,11 @@ PORTS_START = 59828
 def Popen_with_interrupt_at_exit(cmdargs, *args, **kwargs):
     p = None
     try:
-        p = subprocess.Popen(cmdargs, *args, **kwargs)
+        p = psutil.Popen(cmdargs, *args, **kwargs)
         yield p
     finally:
         if p is not None:
+            # start by trying to end process gently, but escalate
             for endfn in (functools.partial(p.send_signal, signal.SIGINT), p.terminate, p.kill):
                 if p.poll() is None:
                     endfn()
@@ -66,8 +67,9 @@ def nodes():
             # '--log-level', str(logging.DEBUG),
         ))) for i in range(NUM_SUBPROCESSES)]
 
-        # TODO: Figure out how to sleep until ports are bound
-        time.sleep(2)
+        # TODO: Do something better than spinlock maybe?
+        while any(sum(1 for con in p.connections() if con.status == psutil.CONN_LISTEN) == 0 for p in processes):
+            pass
 
         yield
 
@@ -79,7 +81,7 @@ def test_nodes_match_state(nodes):
             data=json.dumps({
                 'id': 'honk',
                 'method': 'get_ecdkg_state',
-                'params': ['past Apr 13, 2017 1:07 PM CST'],
+                'params': ['past {}'.format(datetime.utcnow().isoformat())],
             })) for nid in node_ids]
 
         assert(all(r.json()['result']['decryption_condition'] == responses[0].json()['result']['decryption_condition'] for r in responses))

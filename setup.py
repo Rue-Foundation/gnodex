@@ -111,6 +111,7 @@ setup(
 
     setup_requires=['pytest-runner'],
     tests_require=[
+        'psutil',
         'pytest',
         'requests',
     ],
