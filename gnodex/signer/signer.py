@@ -1,12 +1,13 @@
 import socket
 import rlp
 import threading
-import certs
-import sys
 from cryptography.exceptions import InvalidSignature
-from models import SignedBatch, Signature
-from util import crypto, ssl_context
-from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg
+from jsonrpc import dispatcher
+from .. import certs
+from ..models import SignedBatch, Signature
+from ..util import crypto, merkle_helper
+from ..util.rpc import rpc_response, rpc_param_decode, handle_rpc_client
+
 
 def signer_service(args):
     global private_key
@@ -34,8 +35,10 @@ def signer_service(args):
     print("Gnodex Signing Service %d Started" % instance_id)
     while True:
         try:
-            new_sock, addr = sock.accept()
-            thread = threading.Thread(target=handle_client, args=(new_sock, addr))
+            new_sock = sock.accept()[0]
+            thread = threading.Thread(
+                target=handle_rpc_client,
+                args=(new_sock, certs.path_to('server.crt'), certs.path_to('server.key'), dispatcher))
             thread.start()
         except KeyboardInterrupt:
             print("Signing Service %d Exit." % instance_id)
@@ -43,26 +46,34 @@ def signer_service(args):
             break
 
 
-def handle_client(sock, addr):
-    ssl_sock = ssl_context.wrap_server_socket(sock, certs.path_to('server.crt'), certs.path_to('server.key'))
+@dispatcher.add_method
+def receive_batch(signed_batch_rlp_rpc):
+    signed_batch_rlp = rpc_param_decode(signed_batch_rlp_rpc)
+    signed_batch = rlp.decode(signed_batch_rlp, SignedBatch)
+    print("BATCH RECEIVED")
+    batch = signed_batch.batch
+    commitment = batch.commitment
 
-    # Receive batch
-    data =  recv_ssl_msg(ssl_sock)
-    print("RECV: " + str(data))
-    signed_batch = rlp.decode(data, SignedBatch)
-    print("DECD: " + str(signed_batch))
-    # Verify server signature
+    # Empty signature
+    commitment_signature = ''
     try:
+        # Verify Merkle Tree construction
+        merkle_tree = merkle_helper.merkle_tree_from_order_list(batch.orders)
+        merkle_root = merkle_tree.build()
+        if merkle_root != commitment.merkle_root:
+            print("COULD NOT RECONSTRUCT MERKLE TREE")
+            return
+        # Verify server signature
         server_signature = signed_batch.signatures[0].signature
         public_key = crypto.load_public_cert_key(certs.path_to('server.crt'))
-        crypto.verify(public_key, rlp.encode(signed_batch.batch), server_signature)
+        crypto.verify(public_key, rlp.encode(commitment), server_signature)
+        # All ok, sign commitment
+        print("BATCH SIGNED")
+        commitment_signature = crypto.sign_rlp(private_key, commitment)
     except InvalidSignature:
         print("COULD NOT VERIFY SERVER SIGNATURE!")
-        send_ssl_msg(ssl_sock, rlp.encode(Signature(instance_id, '')))
-        ssl_sock.close()
-        return
-    # Sign and return
-    batch_hash_signed = crypto.sign_rlp(private_key, signed_batch.batch)
-    signature = Signature('signer_%d' % instance_id, batch_hash_signed)
-    send_ssl_msg(ssl_sock, rlp.encode(signature))
-    ssl_sock.close()
+    finally:
+        # Return result
+        signature = Signature('signer_%d' % instance_id, commitment_signature)
+        print("RESPONSE SENT")
+        return rpc_response(rlp.encode(signature))
