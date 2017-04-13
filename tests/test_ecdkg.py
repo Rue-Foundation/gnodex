@@ -75,7 +75,7 @@ def nodes():
 
 
 def test_nodes_match_state(nodes):
-        node_ids = util.random.sample(range(NUM_SUBPROCESSES), 2)
+        node_ids = range(NUM_SUBPROCESSES)
         responses = [requests.post('https://localhost:{}'.format(PORTS_START + nid),
             verify=False,
             data=json.dumps({
@@ -84,4 +84,4 @@ def test_nodes_match_state(nodes):
                 'params': ['past {}'.format(datetime.utcnow().isoformat())],
             })) for nid in node_ids]
 
-        assert(all(r.json()['result']['decryption_condition'] == responses[0].json()['result']['decryption_condition'] for r in responses))
+        assert(all(r.json()['result']['decryption_condition'] == responses[0].json()['result']['decryption_condition'] for r in responses[1:]))
