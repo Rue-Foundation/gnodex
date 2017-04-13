@@ -116,7 +116,7 @@ def get_or_generate_private_value(filepath: str) -> int:
     logging.warn('could not read key from private key file {}; generating new value...'.format(filepath))
     with open(filepath, 'w') as private_key_fp:
         private_key = random_private_value()
-        private_key_fp.write(hex(private_key)+'\n')
+        private_key_fp.write('{:064x}\n'.format(private_key))
         return private_key
 
 

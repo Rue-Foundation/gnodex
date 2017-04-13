@@ -1,4 +1,6 @@
 import functools
+import json
+import logging
 import os
 import requests
 import signal
@@ -6,7 +8,8 @@ import subprocess
 import tempfile
 import time
 
-from contextlib import ExitStack
+from contextlib import ExitStack, contextmanager
+from datetime import datetime
 
 from gnodex.ecdkg import util
 
@@ -16,8 +19,26 @@ NUM_SUBPROCESSES = 10
 PORTS_START = 59828
 
 
-def test_nodes():
-    subprocess.check_call((BIN_NAME, '-h'))
+@contextmanager
+def Popen_with_interrupt_at_exit(cmdargs, *args, **kwargs):
+    p = None
+    try:
+        p = subprocess.Popen(cmdargs, *args, **kwargs)
+        yield p
+    finally:
+        if p is not None:
+            for endfn in (functools.partial(p.send_signal, signal.SIGINT), p.terminate, p.kill):
+                if p.poll() is None:
+                    endfn()
+                    try:
+                        # TODO: switch to asyncio???
+                        p.wait(timeout=2)
+                    except subprocess.TimeoutExpired:
+                        continue
+
+
+def test_nodes_match_state():
+    subprocess.check_call((BIN_NAME, '-h'), stdout=subprocess.DEVNULL)
     with ExitStack() as exitstack:
         proc_dir = exitstack.enter_context(tempfile.TemporaryDirectory())
         proc_dir_file = functools.partial(os.path.join, proc_dir)
@@ -27,33 +48,33 @@ def test_nodes():
             for i in range(NUM_SUBPROCESSES))
 
         with open(proc_dir_file('addresses.txt'), 'w') as addrf:
-            addrf.writelines(hex(util.private_value_to_eth_address(privkey)) for privkey in private_keys)
+            for privkey in private_keys:
+                addrf.write("{:040x}\n".format(util.private_value_to_eth_address(privkey)))
 
-        processes = [exitstack.enter_context(subprocess.Popen((
+        with open(proc_dir_file('locations.txt'), 'w') as locf:
+            for i in range(NUM_SUBPROCESSES):
+                locf.write("localhost:{}\n".format(PORTS_START+i))
+
+        processes = [exitstack.enter_context(Popen_with_interrupt_at_exit((
             BIN_NAME, 'ecdkg',
             '--port', str(PORTS_START+i),
             '--private-key-file', proc_dir_file('private.key.{}'.format(i)),
-            '--addresses-file', proc_dir_file('addresses.txt')))) for i in range(NUM_SUBPROCESSES)]
+            '--addresses-file', proc_dir_file('addresses.txt'),
+            '--locations', proc_dir_file('locations.txt'),
+            # '--log-level', str(logging.DEBUG),
+        ))) for i in range(NUM_SUBPROCESSES)]
 
         # TODO: Figure out how to sleep until ports are bound
         time.sleep(2)
 
         # THIS IS WHERE STUFF HAPPENS
-        print(requests.get('https://localhost:{}'.format(PORTS_START + util.random.randrange(NUM_SUBPROCESSES)),
+        node_ids = util.random.sample(range(NUM_SUBPROCESSES), 2)
+        responses = [requests.post('https://localhost:{}'.format(PORTS_START + nid),
             verify=False,
-            data={
+            data=json.dumps({
                 'id': 'honk',
                 'method': 'get_ecdkg_state',
-                'param': ['past 2017-04-13T18:07:00'],
-            }))
+                'params': ['past Apr 13, 2017 1:07 PM CST'],
+            })) for nid in node_ids]
 
-        # TODO: switch to asyncio???
-        # TODO: write this into contextmanager
-        for p in processes:
-            for endfn in (functools.partial(p.send_signal, signal.SIGINT), p.terminate, p.kill):
-                if p.poll() is None:
-                    endfn()
-                    try:
-                        p.wait(timeout=2)
-                    except subprocess.TimeoutExpired:
-                        continue
+        assert(all(r.json()['result']['decryption_condition'] == responses[0].json()['result']['decryption_condition'] for r in responses))
