@@ -7,6 +7,7 @@ import requests
 import signal
 import subprocess
 import tempfile
+import time
 
 from contextlib import ExitStack, contextmanager
 from datetime import datetime
@@ -80,12 +81,61 @@ def is_node_listening(node: NodeInfo):
     return any(True for con in node.process.connections() if con.status == psutil.CONN_LISTEN)
 
 
-def wait_for_all_nodes_listening(nodes):
+def wait_for_all_nodes_listening(nodes, timeout=5):
     # TODO: Do something better than spinlock maybe?
     #       This could maybe be improved if transitioning to an asyncio version
     #       but then would lose psutil interop
+    timelimit = time.perf_counter() + timeout
+
     while any(not is_node_listening(n) for n in nodes):
-        pass
+        if time.perf_counter() >= timelimit:
+            print('wait_for_all_nodes_listening took longer than {} seconds'.format(timeout))
+            print_diagnostics(nodes)
+            break
+
+
+def wait_for_all_nodes_connected(nodes, timeout=5):
+    # each node connects to each other node
+    timelimit = time.perf_counter() + timeout
+
+    while any(sum(1 for con in n.process.connections() if con.status == psutil.CONN_ESTABLISHED) != len(nodes)-1 for n in nodes):
+        if time.perf_counter() >= timelimit:
+            print('wait_for_all_nodes_connected took longer than {} seconds'.format(timeout))
+            print_diagnostics(nodes)
+            break
+
+
+def print_diagnostics(nodes):
+    portmap = {}
+    node_conns = [[c for c in n.process.connections() if c.status == psutil.CONN_ESTABLISHED] for n in nodes]
+    for i, (n, conns) in enumerate(zip(nodes, node_conns)):
+        for c in conns:
+            portmap[c.laddr[1]] = i
+
+    node_conn_sets = []
+    unestablished_connections = set()
+    for i, (n, conns) in enumerate(zip(nodes, node_conns)):
+        outset = set()
+        inset = set()
+
+        for c in conns:
+            if c.laddr[1] == n.port:
+                inset.add(portmap.get(c.raddr[1], '???'))
+            else:
+                outset.add(portmap.get(c.raddr[1], '???'))
+
+        node_conn_sets.append((sorted(inset), sorted(outset)))
+        for elem in range(len(nodes)):
+            if i != elem and elem not in inset and elem not in outset:
+                unestablished_connections.add(tuple(sorted((i, elem))))
+
+    for i, (n, conns, (ins, outs)) in enumerate(zip(nodes, node_conns, node_conn_sets)):
+        print(i, '- num connections:', len(conns))
+        print('  - out', outs)
+        print('  - in ', ins)
+
+    for a, b in sorted(unestablished_connections):
+        print(a, '-X-', b)
 
 
 def test_nodes_match_state(nodes):
@@ -94,23 +144,27 @@ def test_nodes_match_state(nodes):
     deccond = 'past {}'.format(datetime.utcnow().isoformat())
     responses = [requests.post('https://localhost:{}'.format(n.port),
         verify=False,
+        timeout=5,
         data=json.dumps({
             'id': 'honk',
             'method': 'get_ecdkg_state',
             'params': [deccond],
-        })) for n in nodes]
+        })).json()['result'] for n in nodes]
 
-    assert(all(r.json()['result']['decryption_condition'] == responses[0].json()['result']['decryption_condition'] for r in responses[1:]))
+    assert(all(r['decryption_condition'] == responses[0]['decryption_condition'] for r in responses[1:]))
 
 
 def test_nodes_match_pubkey(nodes):
-    wait_for_all_nodes_listening(nodes)
+    wait_for_all_nodes_connected(nodes)
 
     deccond = 'past {}'.format(datetime.utcnow().isoformat())
     responses = [requests.post('https://localhost:{}'.format(n.port),
         verify=False,
+        timeout=5,
         data=json.dumps({
             'id': 'honk',
             'method': 'get_encryption_key',
             'params': [deccond],
-        })) for n in nodes]
+        })).json()['result'] for n in nodes]
+
+    assert(all(r == responses[0] for r in responses[1:]))
