@@ -1,3 +1,4 @@
+import collections
 import functools
 import json
 import logging
@@ -19,6 +20,11 @@ from gnodex.ecdkg import util
 BIN_NAME = 'gnodex'
 NUM_SUBPROCESSES = 10
 PORTS_START = 59828
+
+NodeInfo = collections.namedtuple('NodeInfo', (
+    'process',
+    'private_key',
+))
 
 
 @contextmanager
@@ -67,14 +73,24 @@ def nodes():
             # '--log-level', str(logging.DEBUG),
         ))) for i in range(NUM_SUBPROCESSES)]
 
-        # TODO: Do something better than spinlock maybe?
-        while any(sum(1 for con in p.connections() if con.status == psutil.CONN_LISTEN) == 0 for p in processes):
-            pass
+        yield tuple(NodeInfo(process=proc, private_key=privkey) for proc, privkey in zip(processes, private_keys))
 
-        yield
+
+def is_node_listening(node: NodeInfo):
+    return any(True for con in node.process.connections() if con.status == psutil.CONN_LISTEN)
+
+
+def wait_for_all_nodes_listening(nodes):
+    # TODO: Do something better than spinlock maybe?
+    #       This could maybe be improved if transitioning to an asyncio version
+    #       but then would lose psutil interop
+    while any(not is_node_listening(n) for n in nodes):
+        pass
 
 
 def test_nodes_match_state(nodes):
+    wait_for_all_nodes_listening(nodes)
+
     node_ids = range(NUM_SUBPROCESSES)
     deccond = 'past {}'.format(datetime.utcnow().isoformat())
     responses = [requests.post('https://localhost:{}'.format(PORTS_START + nid),
@@ -89,6 +105,8 @@ def test_nodes_match_state(nodes):
 
 
 def test_nodes_match_pubkey(nodes):
+    wait_for_all_nodes_listening(nodes)
+
     node_ids = range(NUM_SUBPROCESSES)
     deccond = 'past {}'.format(datetime.utcnow().isoformat())
     responses = [requests.post('https://localhost:{}'.format(PORTS_START + nid),
