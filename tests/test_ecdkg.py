@@ -18,12 +18,12 @@ from gnodex.ecdkg import util
 
 
 BIN_NAME = 'gnodex'
-NUM_SUBPROCESSES = 10
 PORTS_START = 59828
 
 NodeInfo = collections.namedtuple('NodeInfo', (
     'process',
     'private_key',
+    'port',
 ))
 
 
@@ -46,7 +46,7 @@ def Popen_with_interrupt_at_exit(cmdargs, *args, **kwargs):
                         continue
 
 @pytest.fixture
-def nodes():
+def nodes(num_ecdkg_nodes):
     subprocess.check_call((BIN_NAME, '-h'), stdout=subprocess.DEVNULL)
     with ExitStack() as exitstack:
         proc_dir = exitstack.enter_context(tempfile.TemporaryDirectory())
@@ -54,14 +54,14 @@ def nodes():
 
         private_keys = tuple(util.get_or_generate_private_value(
             proc_dir_file('private.key.{}'.format(i)))
-            for i in range(NUM_SUBPROCESSES))
+            for i in range(num_ecdkg_nodes))
 
         with open(proc_dir_file('addresses.txt'), 'w') as addrf:
             for privkey in private_keys:
                 addrf.write("{:040x}\n".format(util.private_value_to_eth_address(privkey)))
 
         with open(proc_dir_file('locations.txt'), 'w') as locf:
-            for i in range(NUM_SUBPROCESSES):
+            for i in range(num_ecdkg_nodes):
                 locf.write("localhost:{}\n".format(PORTS_START+i))
 
         processes = [exitstack.enter_context(Popen_with_interrupt_at_exit((
@@ -71,9 +71,9 @@ def nodes():
             '--addresses-file', proc_dir_file('addresses.txt'),
             '--locations', proc_dir_file('locations.txt'),
             # '--log-level', str(logging.DEBUG),
-        ))) for i in range(NUM_SUBPROCESSES)]
+        ))) for i in range(num_ecdkg_nodes)]
 
-        yield tuple(NodeInfo(process=proc, private_key=privkey) for proc, privkey in zip(processes, private_keys))
+        yield tuple(NodeInfo(process=proc, private_key=privkey, port=PORTS_START+i) for i, (proc, privkey) in enumerate(zip(processes, private_keys)))
 
 
 def is_node_listening(node: NodeInfo):
@@ -91,15 +91,14 @@ def wait_for_all_nodes_listening(nodes):
 def test_nodes_match_state(nodes):
     wait_for_all_nodes_listening(nodes)
 
-    node_ids = range(NUM_SUBPROCESSES)
     deccond = 'past {}'.format(datetime.utcnow().isoformat())
-    responses = [requests.post('https://localhost:{}'.format(PORTS_START + nid),
+    responses = [requests.post('https://localhost:{}'.format(n.port),
         verify=False,
         data=json.dumps({
             'id': 'honk',
             'method': 'get_ecdkg_state',
             'params': [deccond],
-        })) for nid in node_ids]
+        })) for n in nodes]
 
     assert(all(r.json()['result']['decryption_condition'] == responses[0].json()['result']['decryption_condition'] for r in responses[1:]))
 
@@ -107,12 +106,11 @@ def test_nodes_match_state(nodes):
 def test_nodes_match_pubkey(nodes):
     wait_for_all_nodes_listening(nodes)
 
-    node_ids = range(NUM_SUBPROCESSES)
     deccond = 'past {}'.format(datetime.utcnow().isoformat())
-    responses = [requests.post('https://localhost:{}'.format(PORTS_START + nid),
+    responses = [requests.post('https://localhost:{}'.format(n.port),
         verify=False,
         data=json.dumps({
             'id': 'honk',
             'method': 'get_encryption_key',
             'params': [deccond],
-        })) for nid in node_ids]
+        })) for n in nodes]
