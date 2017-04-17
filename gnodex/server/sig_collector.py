@@ -23,7 +23,7 @@ def send_batch_to_signer_services():
         # Commit to batch
         merkle_tree = merkle_helper.merkle_tree_from_order_list(server.orders)
         merkle_root = merkle_tree.build()
-        commitment = BatchCommitment(server.current_round, merkle_root)
+        commitment = BatchCommitment(len(server.batches), merkle_root)
         # Sign batch
         batch = Batch(server.orders, commitment)
         commitment_signature = crypto.sign_rlp(server.private_key, commitment)
@@ -54,14 +54,14 @@ def send_batch_to_signer_services():
                 except InvalidSignature:
                     print("SIGNATURE VERIFICATION FAILED!!")
         with server.state_lock.writer:
-            server.last_signed_batch = SignedBatch(
-                signature_collection,
-                batch)
-            server.last_commitment = commitment
-            server.last_merkle_tree = merkle_tree
-            server.last_order_digest_list = merkle_helper.order_list_to_digest_list(server.orders)
+            latest_batch = {
+                'signed_batch': SignedBatch(signature_collection, batch),
+                'commitment': commitment,
+                'merkle_tree': merkle_tree,
+                'order_digest_list': merkle_helper.order_list_to_digest_list(server.orders)
+            }
+            server.batches.append(latest_batch)
             server.orders = list()
-            server.current_round += 1
             server.current_state = server.State.RECEIVE_ORDERS
     else:
         with server.state_lock.writer:
