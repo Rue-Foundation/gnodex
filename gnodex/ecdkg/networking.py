@@ -169,11 +169,11 @@ def make_jsonrpc_call(cinfo: 'channel info',
     if loop is None:
         loop = asyncio.get_event_loop()
 
-    if 'writer' in cinfo:
-        msg = { 'method': method_name,
-                'params': args,
-                'jsonrpc': '2.0' }
+    msg = { 'method': method_name,
+            'params': args,
+            'jsonrpc': '2.0' }
 
+    if 'writer' in cinfo:
         if not is_notification:
             reqid = str(uuid.uuid4())
             msg['id'] = reqid
@@ -185,6 +185,8 @@ def make_jsonrpc_call(cinfo: 'channel info',
 
         if not is_notification:
             return response_futures[reqid]
+    else:
+        logging.warning('cannot send message {} because channel {} has no writer'.format(msg, cinfo))
 
 
 async def get_response_data(res: 'jsonrpc response', timeout: 'seconds' = DEFAULT_TIMEOUT) -> dict:

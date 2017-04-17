@@ -109,6 +109,8 @@ def wait_for_all_nodes_connected(nodes, timeout):
             print_diagnostics(nodes)
             break
 
+    time.sleep(.1) # TODO: remove requirement for waiting for channel establishment
+
 
 def print_diagnostics(nodes):
     portmap = {}
