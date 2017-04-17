@@ -7,7 +7,7 @@ from util import crypto, merkle_helper
 from util.rpc import rpc_response, rpc_param_decode
 
 
-def receive_batch(signed_batch_rlp_rpc):
+def receive_order_batch(signed_batch_rlp_rpc):
     signed_batch_rlp = rpc_param_decode(signed_batch_rlp_rpc)
     signed_batch = rlp.decode(signed_batch_rlp, SignedBatch)
     print("BATCH RECEIVED")
@@ -30,6 +30,10 @@ def receive_batch(signed_batch_rlp_rpc):
         # All ok, sign commitment
         print("BATCH SIGNED")
         commitment_signature = crypto.sign_rlp(signer.private_key, commitment)
+        # Wait for match collection
+        with signer.state_lock.writer:
+            signer.current_state = signer.State.RECEIVE_MATCH_COLLECTION
+        print("AWAITING BATCH MATCHING!")
     except InvalidSignature:
         print("COULD NOT VERIFY SERVER SIGNATURE!")
     finally:
@@ -37,3 +41,4 @@ def receive_batch(signed_batch_rlp_rpc):
         signature = Signature('signer_%d' % signer.instance_id, commitment_signature)
         print("RESPONSE SENT")
         return rpc_response(rlp.encode(signature))
+

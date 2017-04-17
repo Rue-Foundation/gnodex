@@ -1,21 +1,27 @@
 """Signing service"""
 
 import certs
-from util import crypto
-from .service import signer_service
+from util import crypto, locking
+from .service import signer_service, State
 
 """Package-wide variables"""
 private_key = None
 instance_id = None
-last_round = None
+current_state = None
+state_lock = None
+current_round = None
 
 
 def init(args):
     global private_key
     global instance_id
-    global last_round
+    global current_state
+    global state_lock
+    global current_round
 
-    last_round = -1
+    current_state = State.RECEIVE_ORDER_BATCH
+    state_lock = locking.RWLock()
+    current_round = 0
 
     instance_id = args.id
 

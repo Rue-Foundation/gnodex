@@ -7,6 +7,7 @@ from jsonrpc import Dispatcher
 from util.rpc import handle_rpc_client_stateful
 from enum import Enum, auto
 
+
 def master_state_service(args):
     # Start listening for connections
     sock = socket.socket()
@@ -48,8 +49,10 @@ def master_state_service(args):
                 get_state_lock_func))
         thread.start()
 
+
 def get_state_lock_func():
     return (server.current_state, server.state_lock)
+
 
 class State(Enum):
     RECEIVE_ORDERS = auto()
