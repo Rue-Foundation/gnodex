@@ -1,12 +1,12 @@
 import rlp
 import threading
-import certs
-import server
 from cryptography.exceptions import InvalidSignature
-from models import *
-from util import crypto, merkle_helper
-from util.ssl_sock_helper import ssl_connect
-from util.rpc import rpc_call_rlp
+from .. import certs
+from .. import server
+from ..models import *
+from ..util import crypto, merkle_helper
+from ..util.ssl_sock_helper import ssl_connect
+from ..util.rpc import rpc_call_rlp
 
 _static_signers = [
     ('localhost', 31338),

@@ -1,10 +1,10 @@
 import socket
 import threading
-import certs
-import server
-from server import client_handler, sig_collector
+from .. import certs
+from .. import server
+from ..server import client_handler, sig_collector
 from jsonrpc import Dispatcher
-from util.rpc import handle_rpc_client_stateful
+from ..util.rpc import handle_rpc_client_stateful
 from enum import Enum, auto
 
 def master_state_service(args):

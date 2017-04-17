@@ -1,12 +1,12 @@
 import socket
 import rlp
 import threading
-import certs
 from cryptography.exceptions import InvalidSignature
-from models import SignedBatch, Signature
-from util import crypto, merkle_helper
 from jsonrpc import dispatcher
-from util.rpc import rpc_response, rpc_param_decode, handle_rpc_client
+from .. import certs
+from ..models import SignedBatch, Signature
+from ..util import crypto, merkle_helper
+from ..util.rpc import rpc_response, rpc_param_decode, handle_rpc_client
 
 
 def signer_service(args):
