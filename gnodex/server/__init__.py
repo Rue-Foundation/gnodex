@@ -3,7 +3,6 @@
 from .service import master_state_service, State
 from util import crypto, locking
 import certs
-import threading
 
 """Package-wide variables"""
 public_key = None
@@ -16,6 +15,7 @@ last_commitment = None
 last_merkle_tree = None
 last_order_digest_list = None
 current_state = None
+
 
 def init(args):
     global public_key
