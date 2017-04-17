@@ -22,11 +22,14 @@ def master_state_service(args):
     # Configure RPC dispatchers
     state_dispatchers = {
         State.RECEIVE_ORDERS: Dispatcher({
-            "receive_order": client_handler.receive_order}),
+            "receive_order": client_handler.receive_order
+        }),
         State.COLLECT_BATCH_SIGNATURES: Dispatcher({}),
         State.RETRIEVE_DKG_PK_FOR_ORDERS: Dispatcher({}),
         State.RECEIVE_MATCHES: Dispatcher({
-            'receive_matching': matcher_handler.receive_matching}),
+            'receive_matching': matcher_handler.receive_matching,
+            'return_latest_signed_batch': matcher_handler.return_latest_signed_batch
+        }),
         State.COLLECT_MATCHINGS_SIGNATURES: Dispatcher({}),
         State.RETRIEVE_DKG_PK_FOR_MATCHINGS: Dispatcher({}),
         State.CHOOSE_OPTIMAL_MATCHING: Dispatcher({}),

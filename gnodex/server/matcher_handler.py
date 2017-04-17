@@ -21,3 +21,10 @@ def receive_matching(signed_matching_rlp_rpc):
     # Send response
     print("RECEIPT SENT")
     return rpc_response(rlp.encode(signed_receipt))
+
+
+def return_latest_signed_batch():
+    with server.state_lock.reader:
+        latest = len(server.batches)
+    print("BATCH SENT TO MATCHER")
+    return rpc_response(rlp.encode(server.batches[latest-1]['signed_batch'])) if latest > 0 else None
