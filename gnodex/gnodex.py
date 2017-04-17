@@ -4,7 +4,7 @@ import argparse
 import importlib
 import sys
 
-SERVICES = ('client', 'ecdkg', 'server', 'signer')
+SERVICES = ('client', 'ecdkg', 'server', 'signer', 'matcher')
 
 
 def main():
