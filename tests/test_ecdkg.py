@@ -47,7 +47,7 @@ def Popen_with_interrupt_at_exit(cmdargs, *args, **kwargs):
                         continue
 
 @pytest.fixture
-def nodes(num_ecdkg_nodes):
+def nodes(num_ecdkg_nodes, request_timeout):
     subprocess.check_call((BIN_NAME, '-h'), stdout=subprocess.DEVNULL)
     with ExitStack() as exitstack:
         proc_dir = exitstack.enter_context(tempfile.TemporaryDirectory())
@@ -65,14 +65,18 @@ def nodes(num_ecdkg_nodes):
             for i in range(num_ecdkg_nodes):
                 locf.write("localhost:{}\n".format(PORTS_START+i))
 
-        processes = [exitstack.enter_context(Popen_with_interrupt_at_exit((
-            BIN_NAME, 'ecdkg',
-            '--port', str(PORTS_START+i),
-            '--private-key-file', proc_dir_file('private.key.{}'.format(i)),
-            '--addresses-file', proc_dir_file('addresses.txt'),
-            '--locations', proc_dir_file('locations.txt'),
-            # '--log-level', str(logging.DEBUG),
-        ))) for i in range(num_ecdkg_nodes)]
+        processes = []
+        for i in range(num_ecdkg_nodes):
+            processes.append(exitstack.enter_context(Popen_with_interrupt_at_exit((
+                BIN_NAME, 'ecdkg',
+                '--port', str(PORTS_START+i),
+                '--private-key-file', proc_dir_file('private.key.{}'.format(i)),
+                '--addresses-file', proc_dir_file('addresses.txt'),
+                '--locations', proc_dir_file('locations.txt'),
+                # '--log-level', str(logging.DEBUG),
+            ))))
+            # TODO: Figure out why channels randomly do not get set up with tighter timing
+            time.sleep(0.1)
 
         yield tuple(NodeInfo(process=proc, private_key=privkey, port=PORTS_START+i) for i, (proc, privkey) in enumerate(zip(processes, private_keys)))
 
@@ -81,7 +85,7 @@ def is_node_listening(node: NodeInfo):
     return any(True for con in node.process.connections() if con.status == psutil.CONN_LISTEN)
 
 
-def wait_for_all_nodes_listening(nodes, timeout=5):
+def wait_for_all_nodes_listening(nodes, timeout):
     # TODO: Do something better than spinlock maybe?
     #       This could maybe be improved if transitioning to an asyncio version
     #       but then would lose psutil interop
@@ -94,7 +98,7 @@ def wait_for_all_nodes_listening(nodes, timeout=5):
             break
 
 
-def wait_for_all_nodes_connected(nodes, timeout=5):
+def wait_for_all_nodes_connected(nodes, timeout):
     # each node connects to each other node
     timelimit = time.perf_counter() + timeout
 
@@ -138,13 +142,13 @@ def print_diagnostics(nodes):
         print(a, '-X-', b)
 
 
-def test_nodes_match_state(nodes):
-    wait_for_all_nodes_listening(nodes)
+def test_nodes_match_state(nodes, request_timeout):
+    wait_for_all_nodes_listening(nodes, request_timeout)
 
     deccond = 'past {}'.format(datetime.utcnow().isoformat())
     responses = [requests.post('https://localhost:{}'.format(n.port),
         verify=False,
-        timeout=5,
+        timeout=request_timeout,
         data=json.dumps({
             'id': 'honk',
             'method': 'get_ecdkg_state',
@@ -154,13 +158,13 @@ def test_nodes_match_state(nodes):
     assert(all(r['decryption_condition'] == responses[0]['decryption_condition'] for r in responses[1:]))
 
 
-def test_nodes_match_pubkey(nodes):
-    wait_for_all_nodes_connected(nodes)
+def test_nodes_match_pubkey(nodes, request_timeout):
+    wait_for_all_nodes_connected(nodes, request_timeout)
 
     deccond = 'past {}'.format(datetime.utcnow().isoformat())
     responses = [requests.post('https://localhost:{}'.format(n.port),
         verify=False,
-        timeout=5,
+        timeout=request_timeout,
         data=json.dumps({
             'id': 'honk',
             'method': 'get_encryption_key',
