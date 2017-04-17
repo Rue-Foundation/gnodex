@@ -62,12 +62,15 @@ def send_batch_to_signer_services():
             }
             server.batches.append(latest_batch)
             server.orders = list()
-            server.current_state = server.State.RECEIVE_ORDERS
+            # TODO: Transition to RETRIEVE_DKG_PK_FOR_ORDERS
+            server.current_state = server.State.RECEIVE_MATCHES
+            t = threading.Timer(interval=10.0, function=send_matches_to_signer_services)
+            t.start()
     else:
         with server.state_lock.writer:
             server.current_state = server.State.RECEIVE_ORDERS
-    t = threading.Timer(interval=10.0, function=send_batch_to_signer_services)
-    t.start()
+        t = threading.Timer(interval=10.0, function=send_batch_to_signer_services)
+        t.start()
 
 
 def send_signed_batch(ssl_sock, signed_batch_rlp: SignedBatch):
@@ -76,3 +79,9 @@ def send_signed_batch(ssl_sock, signed_batch_rlp: SignedBatch):
         "receive_batch",
         {"signed_batch_rlp_rpc": signed_batch_rlp})
     return rlp.decode(signature_rlp, Signature)
+
+
+def send_matches_to_signer_services():
+    print("ATTEMPT TO SEND MATCHES TO SIGNER SERVICES")
+    t = threading.Timer(interval=10.0, function=send_matches_to_signer_services)
+    t.start()

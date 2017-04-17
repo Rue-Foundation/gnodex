@@ -34,6 +34,7 @@ def return_confirmation(signed_receipt_rlp_rpc):
 
 
 def receive_order(signed_order_rlp_rpc):
+    # TODO Verify Sig
     signed_order_rlp = rpc_param_decode(signed_order_rlp_rpc)
     signed_order = rlp.decode(signed_order_rlp, SignedOrder)
     print("ORDER RECEIVED")

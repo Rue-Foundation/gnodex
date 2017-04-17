@@ -9,6 +9,7 @@ public_key = None
 private_key = None
 orders = None
 batches = None
+matchings = None
 current_state = None
 state_lock = None
 
@@ -19,6 +20,7 @@ def init(args):
     global batches
     global current_state
     global state_lock
+    global matchings
 
     # Load public key for signature verification
     public_key = crypto.load_public_cert_key(certs.path_to('server.crt'))
@@ -30,6 +32,9 @@ def init(args):
 
     # Create batch history
     batches = list()
+
+    # create match buffer
+    matchings = list()
 
     current_state = State.RECEIVE_ORDERS
     state_lock = locking.RWLock()

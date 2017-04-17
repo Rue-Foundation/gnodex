@@ -2,7 +2,7 @@ import socket
 import threading
 import certs
 import server
-from server import client_handler, sig_collector
+from server import client_handler, matcher_handler, sig_collector
 from jsonrpc import Dispatcher
 from util.rpc import handle_rpc_client_stateful
 from enum import Enum, auto
@@ -25,7 +25,8 @@ def master_state_service(args):
             "receive_order": client_handler.receive_order}),
         State.COLLECT_BATCH_SIGNATURES: Dispatcher({}),
         State.RETRIEVE_DKG_PK_FOR_ORDERS: Dispatcher({}),
-        State.RECEIVE_MATCHES: Dispatcher({}),
+        State.RECEIVE_MATCHES: Dispatcher({
+            'receive_matching': matcher_handler.receive_matching}),
         State.COLLECT_MATCHINGS_SIGNATURES: Dispatcher({}),
         State.RETRIEVE_DKG_PK_FOR_MATCHINGS: Dispatcher({}),
         State.CHOOSE_OPTIMAL_MATCHING: Dispatcher({}),
