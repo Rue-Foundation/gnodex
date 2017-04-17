@@ -40,11 +40,20 @@ def recv_ssl_msg_timeout(sock: ssl.SSLSocket, delimiter=b'\n', timeout = 2):
     received = False
 
     sock.setblocking(False)
+    sock.settimeout(timeout)
     while True:
         available = select.select([sock], [], [], timeout / 25)
-        data = False
+        data = None
         if available[0]:
-            data = sock.recv()
+            data = bytearray()
+            subdata = sock.recv()
+            while subdata:
+                data.extend(subdata)
+                try:
+                    subdata = sock.recv()
+                except socket.timeout:
+                    subdata = None
+
         if not data:
             if (time.time() - last > timeout):
                 break
@@ -52,7 +61,7 @@ def recv_ssl_msg_timeout(sock: ssl.SSLSocket, delimiter=b'\n', timeout = 2):
 
         last = time.time()
         buff.extend(data)
-        if delimiter in data:
+        if delimiter in buff:
             received = True
             break
 

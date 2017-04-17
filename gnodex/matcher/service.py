@@ -22,7 +22,7 @@ def request_batch():
             print("CONNECTION ERROR")
             return
         with ssl_sock:
-            batch = rpc_call(ssl_sock, "request_batch", {}, True)
+            batch = rpc_call(ssl_sock, "return_latest_signed_batch", {}, default_timeout=True)
     except TimeoutError:
         print("REQUEST TIMED OUT")
     finally:
@@ -32,7 +32,6 @@ def request_batch():
             t.start()
             return
         print("RECEIVED BATCH")
-        print(batch)
         process_batch(batch)
 
 
