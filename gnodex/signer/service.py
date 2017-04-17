@@ -38,10 +38,10 @@ def signer_service(args):
                     state_dispatchers,
                     global_dispatcher,
                     get_state_lock_func))
+            thread.setDaemon(True)
             thread.start()
         except KeyboardInterrupt:
             print("Signing Service %d Exit." % signer.instance_id)
-            # TODO: Kill other running threads
             break
 
 

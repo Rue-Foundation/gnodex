@@ -56,16 +56,17 @@ def handle_rpc_client_stateful(sock, cert, key_file, state_dispatchers, global_d
     ssl_sock = wrap_server_socket(sock, cert, key_file)
 
     # Wait for input, and respond
-    while True:
-        data = recv_ssl_msg(ssl_sock)
-        rpc_input = data.decode()
-        print("RPC DEBUG INPUT: " + rpc_input)
-        (state, rwlock) = get_state_lock_func()
-        with rwlock.reader:
-            rpc_output = JSONRPCResponseManager.handle(rpc_input, state_dispatchers[state])
-            if rpc_output.error and rpc_output.error["code"] == JSONRPCMethodNotFound.CODE:
-                rpc_output = JSONRPCResponseManager.handle(rpc_input, global_dispatcher)
-        print("RPC DEBUG OUTPUT: " + str(rpc_output))
-        if rpc_output:
-            print(rpc_output.json)
-            send_ssl_msg(ssl_sock, rpc_output.json.encode())
+    with ssl_sock:
+        while True:
+            data = recv_ssl_msg(ssl_sock)
+            rpc_input = data.decode()
+            print("RPC DEBUG INPUT: " + rpc_input)
+            (state, rwlock) = get_state_lock_func()
+            with rwlock.reader:
+                rpc_output = JSONRPCResponseManager.handle(rpc_input, state_dispatchers[state])
+                if rpc_output.error and rpc_output.error["code"] == JSONRPCMethodNotFound.CODE:
+                    rpc_output = JSONRPCResponseManager.handle(rpc_input, global_dispatcher)
+            print("RPC DEBUG OUTPUT: " + str(rpc_output))
+            if rpc_output:
+                print(rpc_output.json)
+                send_ssl_msg(ssl_sock, rpc_output.json.encode())

@@ -17,6 +17,7 @@ def master_state_service(args):
 
     # Create order batch submission timer
     t = threading.Timer(interval=10.0, function=sig_collector.send_batch_to_signer_services)
+    t.setDaemon(True)
     t.start()
 
     # Configure RPC dispatchers
@@ -41,17 +42,22 @@ def master_state_service(args):
     # Accept connections and start handling them in own thread
     print("Gnodex Master State Server Started")
     while True:
-        new_sock = sock.accept()[0]
-        thread = threading.Thread(
-            target=handle_rpc_client_stateful,
-            args=(
-                new_sock,
-                certs.path_to('server.crt'),
-                certs.path_to('server.key'),
-                state_dispatchers,
-                global_dispatcher,
-                get_state_lock_func))
-        thread.start()
+        try:
+            new_sock = sock.accept()[0]
+            thread = threading.Thread(
+                target=handle_rpc_client_stateful,
+                args=(
+                    new_sock,
+                    certs.path_to('server.crt'),
+                    certs.path_to('server.key'),
+                    state_dispatchers,
+                    global_dispatcher,
+                    get_state_lock_func))
+            thread.setDaemon(True)
+            thread.start()
+        except KeyboardInterrupt:
+            print("Master State Service Exit.")
+            break
 
 
 def get_state_lock_func():

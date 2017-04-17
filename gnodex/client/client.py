@@ -36,43 +36,48 @@ def trade_client(args):
     # Get user input, send to server
     print("Gnodex Trade Client Started")
     while True:
-        # Read input line, and send as RLP
-        line = sys.stdin.readline()
-        parsed = pattern.parse(line)
-        if (parsed == None):
-            continue
-        order = None
-        if (parsed['operation'] == 'BUY'):
-            order = Order(parsed['from_token'], parsed['from_amount'], parsed['to_token'], parsed['to_amount'])
-        elif (parsed['operation'] == 'SELL'):
-            order = Order(parsed['to_token'], parsed['to_amount'], parsed['from_token'], parsed['from_amount'])
-        else:
-            continue
-
-        signed_order = SignedOrder(order, crypto.sign_rlp(private_key, order))
-        signed_order_rlp = rlp.encode(signed_order)
-        # Receive signature from state server
-        # TODO: Encrypt order with DKG Key
-        signed_receipt = send_signed_order(ssl_sock, signed_order_rlp)
-
-        # Verify Signed Order
-        order_hash = crypto.sha256_utf8(signed_order_rlp)
-        receipt_order_digest = signed_receipt.receipt.order_digest
-        if (order_hash != receipt_order_digest):
-            print("INVALID ORDER HASH!")
-            continue
-        print("ROUND: " + str(signed_receipt.receipt.round))
-
-        # Verify Signature
-        receipt_rlp_encoded = rlp.encode(signed_receipt.receipt)
-
         try:
-            crypto.verify(public_key, receipt_rlp_encoded, signed_receipt.signature)
-            print("SIGNATURE OK!")
-            t = threading.Timer(interval=2.0, function=request_membership_verification, args=(signed_receipt,))
-            t.start()
-        except InvalidSignature:
-            print("SIGNATURE VERIFICATION FAILED!!")
+            # Read input line, and send as RLP
+            line = sys.stdin.readline()
+            parsed = pattern.parse(line)
+            if (parsed == None):
+                continue
+            order = None
+            if (parsed['operation'] == 'BUY'):
+                order = Order(parsed['from_token'], parsed['from_amount'], parsed['to_token'], parsed['to_amount'])
+            elif (parsed['operation'] == 'SELL'):
+                order = Order(parsed['to_token'], parsed['to_amount'], parsed['from_token'], parsed['from_amount'])
+            else:
+                continue
+
+            signed_order = SignedOrder(order, crypto.sign_rlp(private_key, order))
+            signed_order_rlp = rlp.encode(signed_order)
+            # Receive signature from state server
+            # TODO: Encrypt order with DKG Key
+            signed_receipt = send_signed_order(ssl_sock, signed_order_rlp)
+
+            # Verify Signed Order
+            order_hash = crypto.sha256_utf8(signed_order_rlp)
+            receipt_order_digest = signed_receipt.receipt.order_digest
+            if (order_hash != receipt_order_digest):
+                print("INVALID ORDER HASH!")
+                continue
+            print("ROUND: " + str(signed_receipt.receipt.round))
+
+            # Verify Signature
+            receipt_rlp_encoded = rlp.encode(signed_receipt.receipt)
+
+            try:
+                crypto.verify(public_key, receipt_rlp_encoded, signed_receipt.signature)
+                print("SIGNATURE OK!")
+                t = threading.Timer(interval=2.0, function=request_membership_verification, args=(signed_receipt,))
+                t.setDaemon(True)
+                t.start()
+            except InvalidSignature:
+                print("SIGNATURE VERIFICATION FAILED!!")
+        except KeyboardInterrupt:
+            print("Trade Client Exit.")
+            break
 
 
 def send_signed_order(ssl_sock, signed_order_rlp: SignedOrder):
@@ -105,6 +110,7 @@ def request_membership_verification(signed_receipt: SignedReceipt):
                 signed_receipt.receipt.order_digest,
                 signed_receipt.receipt.round))
             t = threading.Timer(interval=2.0, function=request_membership_verification, args=(signed_receipt,))
+            t.setDaemon(True)
             t.start()
         else:
             print("ORDER CONFIRMATION RECEIVED!!!")
