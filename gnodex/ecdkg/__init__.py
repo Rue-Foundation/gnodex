@@ -19,6 +19,8 @@ def setup_argparser(parser):
                         help='Port no. to serve on (default: %(default)s)')
     parser.add_argument('--log-level', type=int, nargs='?', default=logging.INFO,
                         help='Logging level (default: %(default)s)')
+    parser.add_argument('--log-format', nargs='?', default='%(message)s',
+                        help='Logging message format (default: %(default)s)')
     parser.add_argument('--private-key-file', nargs='?', default='private.key',
                         help='File to load private key from (default: %(default)s)')
     parser.add_argument('--addresses-file', nargs='?', default='addresses.txt',
@@ -29,7 +31,7 @@ def setup_argparser(parser):
 
 
 def main(args):
-    logging.basicConfig(level=args.log_level, format='%(message)s')
+    logging.basicConfig(level=args.log_level, format=args.log_format)
 
     ecdkg.private_key = util.get_or_generate_private_value(args.private_key_file)
     own_public_key = bitcoin.fast_multiply(bitcoin.G, ecdkg.private_key)

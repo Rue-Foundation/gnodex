@@ -74,6 +74,7 @@ def nodes(num_ecdkg_nodes, request_timeout):
                 '--addresses-file', proc_dir_file('addresses.txt'),
                 '--locations', proc_dir_file('locations.txt'),
                 '--log-level', str(logging.DEBUG),
+                '--log-format', '[{}]: %(message)s'.format(i),
             ))))
             # TODO: Figure out why channels randomly do not get set up with tighter timing
             time.sleep(0.1)
