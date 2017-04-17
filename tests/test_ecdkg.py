@@ -73,7 +73,7 @@ def nodes(num_ecdkg_nodes, request_timeout):
                 '--private-key-file', proc_dir_file('private.key.{}'.format(i)),
                 '--addresses-file', proc_dir_file('addresses.txt'),
                 '--locations', proc_dir_file('locations.txt'),
-                # '--log-level', str(logging.DEBUG),
+                '--log-level', str(logging.DEBUG),
             ))))
             # TODO: Figure out why channels randomly do not get set up with tighter timing
             time.sleep(0.1)
@@ -124,9 +124,9 @@ def print_diagnostics(nodes):
 
         for c in conns:
             if c.laddr[1] == n.port:
-                inset.add(portmap.get(c.raddr[1], '???'))
+                inset.add(portmap.get(c.raddr[1], -1))
             else:
-                outset.add(portmap.get(c.raddr[1], '???'))
+                outset.add(portmap.get(c.raddr[1], -1))
 
         node_conn_sets.append((sorted(inset), sorted(outset)))
         for elem in range(len(nodes)):
