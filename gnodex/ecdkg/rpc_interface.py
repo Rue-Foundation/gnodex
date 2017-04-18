@@ -71,11 +71,7 @@ def create_dispatcher(address: int = None):
 
         if ecdkg_obj.phase == ecdkg.ECDKGPhase.uninitialized:
             await update_participants()
-            # in order to move onto the key distribution phase, everyone must agree on participants and alt_generator
-            # TODO: handle hella improbable event parts sum up to EC group identity
-            ecdkg_obj.alt_generator = functools.reduce(bitcoin.fast_add,
-                (p.alt_generator_part for p in ecdkg_obj.participants),
-                ecdkg_obj.alt_generator_part)
+            # everyone should on agree on participants
             ecdkg_obj.threshold = math.ceil(ecdkg.THRESHOLD_FACTOR * (len(ecdkg_obj.participants)+1))
 
             spoly1 = ecdkg.random_polynomial(ecdkg_obj.threshold)
@@ -85,7 +81,7 @@ def create_dispatcher(address: int = None):
             ecdkg_obj.secret_poly2 = spoly2
 
             ecdkg_obj.phase = ecdkg.ECDKGPhase.key_distribution
-            ecdkg_obj.verification_points = tuple(bitcoin.fast_add(bitcoin.fast_multiply(bitcoin.G, a), bitcoin.fast_multiply(ecdkg_obj.alt_generator, b)) for a, b in zip(spoly1, spoly2))
+            ecdkg_obj.verification_points = tuple(bitcoin.fast_add(bitcoin.fast_multiply(bitcoin.G, a), bitcoin.fast_multiply(ecdkg.G2, b)) for a, b in zip(spoly1, spoly2))
 
             db.Session.commit()
 
@@ -118,7 +114,7 @@ def create_dispatcher(address: int = None):
                 share2 = participant.secret_share2
                 if share1 is not None and share2 is not None:
                     vlhs = bitcoin.fast_add(bitcoin.fast_multiply(bitcoin.G, share1),
-                                            bitcoin.fast_multiply(ecdkg_obj.alt_generator, share2))
+                                            bitcoin.fast_multiply(ecdkg.G2, share2))
                     vrhs = functools.reduce(bitcoin.fast_add, (bitcoin.fast_multiply(ps, pow(ecdkg.own_address, k, bitcoin.N)) for k, ps in enumerate(participant.verification_points)))
 
                     if vlhs != vrhs:
