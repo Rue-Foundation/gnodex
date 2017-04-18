@@ -30,7 +30,7 @@ def random_private_value() -> int:
 
 def validate_private_value(value: int):
     if value < 0 or value >= bitcoin.N:
-        raise ValueError('invalid EC private value {}'.format(hex(value)))
+        raise ValueError('invalid EC private value {:064x}'.format(value))
 
 
 def validate_polynomial(polynomial: int):
@@ -38,7 +38,7 @@ def validate_polynomial(polynomial: int):
         try:
             validate_private_value(coeff)
         except ValueError:
-            raise ValueError('invalid x^{} coefficient {}'.format(i, hex(coeff)))
+            raise ValueError('invalid x^{} coefficient {:064x}'.format(i, coeff))
 
 
 def validate_curve_point(point: (int, int)):

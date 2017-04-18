@@ -118,10 +118,10 @@ async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writ
         channels[eth_address] = {}
 
     if 'writer' in channels[eth_address]:
-        logging.debug('channel for {} already exists; reestablishing channel...'.format(hex(eth_address)))
+        logging.debug('channel for {:040x} already exists; reestablishing channel...'.format(eth_address))
         channels[eth_address]['writer'].close()
     else:
-        logging.info('establishing new channel for {}'.format(hex(eth_address)))
+        logging.info('establishing new channel for {:040x}'.format(eth_address))
 
     channels[eth_address]['reader'] = reader
     channels[eth_address]['writer'] = writer
@@ -131,7 +131,7 @@ async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writ
 
     try:
         async for msg in json_lines_with_timeout(reader):
-            logging.debug('received message {} from {}'.format(msg, hex(eth_address)))
+            logging.debug('received message {} from {:040x}'.format(msg, eth_address))
             if msg is None:
                 logging.warning('message should not be None!')
             elif 'method' in msg:
@@ -153,11 +153,11 @@ async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writ
                 else:
                     logging.warning('Response with id {} has no corresponding future'.format(fut_id))
     except asyncio.TimeoutError:
-        logging.warn('channel for {} timed out'.format(hex(eth_address)))
+        logging.warn('channel for {:040x} timed out'.format(eth_address))
     finally:
         writer.close()
         if writer is channels[eth_address].get('writer'):
-            logging.info('removing channel for {}'.format(hex(eth_address)))
+            logging.info('removing channel for {:040x}'.format(eth_address))
             del channels[eth_address]['reader']
             del channels[eth_address]['writer']
 
@@ -226,12 +226,12 @@ async def server(host: str, port: int, *,
             if protocol_indicator == b'DKG ':
                 nonce = util.random.randrange(2**256)
                 noncebytes = nonce.to_bytes(32, byteorder='big')
-                logging.debug('(s) sending nonce {}'.format(hex(nonce)))
+                logging.debug('(s) sending nonce {:064x}'.format(nonce))
                 writer.write(nonce.to_bytes(32, byteorder='big'))
 
                 rsv_bytes = await asyncio.wait_for(reader.read(65), timeout)
                 r, s, v = (int.from_bytes(b, byteorder='big') for b in (rsv_bytes[0:32], rsv_bytes[32:64], rsv_bytes[64:]))
-                logging.debug('(s) received signature rsv {}'.format(tuple(map(hex, (r, s, v)))))
+                logging.debug('(s) received signature rsv ({:02x}, {:064x}, {:064x})'.format(r, s, v))
 
                 try:
                     clipubkey = bitcoin.ecdsa_raw_recover(noncebytes, (v, r, s))
@@ -240,7 +240,7 @@ async def server(host: str, port: int, *,
 
                 if clipubkey:
                     cliethaddr = util.curve_point_to_eth_address(clipubkey)
-                    logging.debug('(s) got client address: {}'.format(hex(cliethaddr)))
+                    logging.debug('(s) got client address: {:040x}'.format(cliethaddr))
                 else:
                     cliethaddr = None
 
@@ -249,7 +249,7 @@ async def server(host: str, port: int, *,
                     return
 
                 if cliethaddr not in ecdkg.accepted_addresses:
-                    logging.debug('(s) client address {} not accepted'.format(hex(cliethaddr)))
+                    logging.debug('(s) client address {:40x} not accepted'.format(cliethaddr))
                     return
 
                 await establish_channel(cliethaddr, reader, writer)
@@ -318,20 +318,20 @@ async def attempt_to_establish_channel(host: str, port: int, *,
         logging.debug('(c) socket cipher: {}'.format(sslsocket.cipher()))
         srvpubkey = get_public_key_from_ssl_socket(sslsocket)
         srvethaddr = util.curve_point_to_eth_address(srvpubkey)
-        logging.debug('(c) server eth address: {}'.format(hex(srvethaddr)))
+        logging.debug('(c) server eth address: {:040x}'.format(srvethaddr))
 
         if srvethaddr not in ecdkg.accepted_addresses:
-            logging.debug('(c) server eth address {} not accepted'.format(hex(srvethaddr)))
+            logging.debug('(c) server eth address {:040x} not accepted'.format(srvethaddr))
             return
 
         writer.write(b'DKG ')
 
         noncebytes = await asyncio.wait_for(reader.read(32), timeout)
         nonce = int.from_bytes(noncebytes, byteorder='big')
-        logging.debug('(c) got nonce: {}'.format(hex(nonce)))
+        logging.debug('(c) got nonce: {:064x}'.format(nonce))
 
         v, r, s = bitcoin.ecdsa_raw_sign(noncebytes, ecdkg.private_key)
-        logging.debug('(c) sending nonce signature rsv {}'.format(tuple(map(hex, (r, s, v)))))
+        logging.debug('(c) sending nonce signature rsv ({:02x}, {:064x}, {:064x})'.format(r, s, v))
         writer.write(r.to_bytes(32, 'big') + s.to_bytes(32, 'big') + v.to_bytes(1, 'big'))
 
         await establish_channel(srvethaddr, reader, writer, srvipaddr)

@@ -41,11 +41,11 @@ def main(args):
     locations = util.get_locations(args.locations_file)
 
 
-    logging.debug('own pubkey: ({}, {})'.format(*map(hex, own_public_key)))
-    logging.info('own address: {}'.format(hex(ecdkg.own_address)))
+    logging.debug('own pubkey: ({0[0]:064x}, {0[1]:064x})'.format(own_public_key))
+    logging.info('own address: {:040x}'.format(ecdkg.own_address))
     if ecdkg.accepted_addresses:
         logging.info('accepted addresses: {{\n    {}\n}}'.format(
-            '\n    '.join(hex(a) for a in ecdkg.accepted_addresses)))
+            '\n    '.join('{:040x}'.format(a) for a in ecdkg.accepted_addresses)))
     else:
         logging.warn('not accepting any addresses')
 

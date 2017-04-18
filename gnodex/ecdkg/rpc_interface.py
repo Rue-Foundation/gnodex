@@ -184,7 +184,6 @@ def create_dispatcher(address: int = None):
                     cinfo = networking.channels[address]
                     res = await networking.make_jsonrpc_call(cinfo, 'get_decryption_key_part',
                         decryption_condition)
-                    print(res)
                     participant.decryption_key_part = int(res, 16)
 
             ecdkg_obj.decryption_key = (sum(p.decryption_key_part for p in ecdkg_obj.participants) + ecdkg_obj.secret_poly1[0]) % bitcoin.N

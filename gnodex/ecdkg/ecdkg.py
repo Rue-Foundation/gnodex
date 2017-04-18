@@ -36,12 +36,13 @@ def generate_public_shares(alt_generator, poly1, poly2):
 
 @enum.unique
 class ECDKGPhase(enum.IntEnum):
-    uninitialized = 0
-    key_distribution = 1
-    key_verification = 2
-    key_check = 3
-    key_generation = 4
-    key_publication = 5
+    uninitialized = enum.auto()
+    alt_generator_part_created = enum.auto()
+    key_distribution = enum.auto()
+    key_verification = enum.auto()
+    key_check = enum.auto()
+    key_generation = enum.auto()
+    key_publication = enum.auto()
 
 
 class ECDKG(db.Base):
