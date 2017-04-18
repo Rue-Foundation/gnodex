@@ -1,12 +1,11 @@
-import rlp
-from models import SignedBatch
+import functools
 
 
 def process_batch(signed_batch):
     # TODO Decrypt Order Batch
     # TODO Generalize to match more than 2 token types
     signed_orders = signed_batch.batch.orders
-    if (len(signed_orders) == 0):
+    if len(signed_orders) == 0:
         print("EMTPY BATCH")
         return
     orders = [signed_order.order for signed_order in signed_orders]
@@ -51,14 +50,14 @@ def process_batch(signed_batch):
     print("Bids satisfied: " + str(len(bids)))
     print("Asks satisfied: " + str(len(asks)))
 
-    # Create routes from ask sell_amount(s) to bid buy_amount(s)
-    # and vice versa
+    # Create routes from ask sell_amount(s) to bid buy_amount(s) and vice versa
     # Sort bids ascendingly by price
-    bids = sorted(bids, cmp = lambda a, b: a.sell_amount*b.buy_amount < b.sell_amount*a.buy_amount)
+    bids.sort(key=functools.cmp_to_key(lambda a, b: a.sell_amount*b.buy_amount < b.sell_amount*a.buy_amount))
     # Sort asks descendingly by price
-    asks = reversed(sorted(asks, cmp = lambda a, b: a.buy_amount*b.sell_amount < b.buy_amount*a.sell_amount))
+    asks.sort(key=functools.cmp_to_key(lambda a, b: a.buy_amount*b.sell_amount < b.buy_amount*a.sell_amount))
+    asks.reverse()
+
     # Move with two pointers across bids and asks
     # Create routes from bids sell_token to asks buy_token until 1) asks satisfied or 2) bids exhausted
     # Create routes from asks sell_token to bids buy_token until <if 1)> asks exhausted <else if 2)> bids satisfied
     # Create routes to collect remaining tokens from EITHER buy_token or sell_token, depending on case, as wellfare
-

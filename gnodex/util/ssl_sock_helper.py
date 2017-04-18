@@ -22,9 +22,10 @@ def recv_ssl_msg(sock: ssl.SSLSocket, delimiter=b'\n'):
     while True:
         data = sock.recv()
         buff.extend(data)
-        if delimiter in data:
+        if not data:
+            time.sleep(0.1)
+        elif delimiter in data:
             break
-        time.sleep(0.1)
 
     pos = buff.index(delimiter)
     res = buff[0:pos]
