@@ -8,7 +8,6 @@ class Route(rlp.Serializable):
         ('left_order', BigEndianInt(8)),
         ('left_amount', BigEndianInt(8)),
         ('right_order', BigEndianInt(8)),
-        ('right_amount', BigEndianInt(8)),
     ]
 
 

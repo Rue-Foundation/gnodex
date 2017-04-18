@@ -6,6 +6,7 @@ import certs
 import parse
 import merkle
 import time
+import os
 from cryptography.exceptions import InvalidSignature
 from models import Order, SignedOrder, SignedReceipt, Chain, ChainLink
 from util import crypto
@@ -44,10 +45,11 @@ def trade_client(args):
             if (parsed == None):
                 continue
             order = None
+            id = int.from_bytes(os.urandom(8), byteorder='big')
             if (parsed['operation'] == 'BUY'):
-                order = Order(parsed['from_token'], parsed['from_amount'], parsed['to_token'], parsed['to_amount'])
+                order = Order(id, parsed['from_token'], parsed['from_amount'], parsed['to_token'], parsed['to_amount'])
             elif (parsed['operation'] == 'SELL'):
-                order = Order(parsed['to_token'], parsed['to_amount'], parsed['from_token'], parsed['from_amount'])
+                order = Order(id, parsed['to_token'], parsed['to_amount'], parsed['from_token'], parsed['from_amount'])
             else:
                 continue
 
