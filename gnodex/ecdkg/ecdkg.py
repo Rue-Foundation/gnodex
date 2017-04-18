@@ -4,10 +4,11 @@ import enum
 import functools
 import itertools
 import logging
+import math
 
 import bitcoin
 
-from . import db, util
+from . import db, util, networking
 
 
 COMS_TIMEOUT = 10
@@ -44,12 +45,12 @@ def generate_public_shares(poly1, poly2):
 
 @enum.unique
 class ECDKGPhase(enum.IntEnum):
-    uninitialized = enum.auto()
-    key_distribution = enum.auto()
-    key_verification = enum.auto()
-    key_check = enum.auto()
-    key_generation = enum.auto()
-    key_publication = enum.auto()
+    uninitialized = 0
+    key_distribution = 1
+    key_verification = 2
+    key_check = 3
+    key_generation = 4
+    key_publication = 5
 
 
 class ECDKG(db.Base):
@@ -82,6 +83,117 @@ class ECDKG(db.Base):
         return ecdkg_obj
 
 
+    async def update_participants(self):
+        state_futs = {}
+        states = {}
+        for addr, cinfo in networking.channels.items():
+            state_futs[addr] = networking.make_jsonrpc_call(cinfo, 'get_ecdkg_state', self.decryption_condition)
+
+        await asyncio.wait(state_futs.values(), timeout=COMS_TIMEOUT)
+
+        for addr, state_fut in state_futs.items():
+            if state_fut.done():
+                try:
+                    result = state_fut.result()
+                except e:
+                    logging.error(e)
+                else:
+                    states[addr] = result
+
+        for addr, state in states.items():
+            participant = self.get_or_create_participant_by_address(addr)
+            participant.update_with_ecdkg_state_message(state)
+            # TODO: make and handle complaints for bad state updates?
+
+
+    async def handle_uninitialized_phase(self):
+        await self.update_participants()
+        # everyone should on agree on participants
+        self.threshold = math.ceil(THRESHOLD_FACTOR * (len(self.participants)+1))
+
+        spoly1 = random_polynomial(self.threshold)
+        spoly2 = random_polynomial(self.threshold)
+
+        self.secret_poly1 = spoly1
+        self.secret_poly2 = spoly2
+
+        self.verification_points = tuple(bitcoin.fast_add(bitcoin.fast_multiply(bitcoin.G, a), bitcoin.fast_multiply(G2, b)) for a, b in zip(spoly1, spoly2))
+
+        self.phase = ECDKGPhase.key_distribution
+        db.Session.commit()
+
+
+    async def handle_key_distribution_phase(self):
+        for participant in self.participants:
+            address = participant.eth_address
+            if address in networking.channels:
+                cinfo = networking.channels[address]
+                share1 = eval_polynomial(self.secret_poly1, address)
+                share2 = eval_polynomial(self.secret_poly2, address)
+
+                networking.make_jsonrpc_call(cinfo, 'receive_secret_shares',
+                    self.decryption_condition,
+                    '{:064x}'.format(share1),
+                    '{:064x}'.format(share2),
+                    is_notification = True)
+
+        self.phase = ECDKGPhase.key_verification
+        db.Session.commit()
+
+
+    async def handle_key_verification_phase(self):
+        global own_address
+
+        await self.update_participants()
+        await asyncio.wait([secret_share_futures[sfid] for sfid in ((self.id, p.eth_address) for p in self.participants) if sfid in secret_share_futures], timeout=COMS_TIMEOUT)
+
+        for participant in self.participants:
+            address = participant.eth_address
+            share1 = participant.secret_share1
+            share2 = participant.secret_share2
+            if share1 is not None and share2 is not None:
+                vlhs = bitcoin.fast_add(bitcoin.fast_multiply(bitcoin.G, share1),
+                                        bitcoin.fast_multiply(G2, share2))
+                vrhs = functools.reduce(bitcoin.fast_add, (bitcoin.fast_multiply(ps, pow(own_address, k, bitcoin.N)) for k, ps in enumerate(participant.verification_points)))
+
+                if vlhs != vrhs:
+                    # TODO: Produce complaints and continue instead of halting here
+                    raise ProtocolError('verification of shares failed')
+            else:
+                raise ProtocolError('missing some shares')
+
+        self.phase = ECDKGPhase.key_check
+        db.Session.commit()
+
+
+    async def handle_key_check_phase(self):
+        # TODO: Track complaints and filter qualifying set
+
+        self.phase = ECDKGPhase.key_generation
+        db.Session.commit()
+
+
+    async def handle_key_generation_phase(self):
+        self.encryption_key_part = bitcoin.fast_multiply(bitcoin.G, self.secret_poly1[0])
+
+        for participant in self.participants:
+            address = participant.eth_address
+            if address in networking.channels:
+                cinfo = networking.channels[address]
+                networking.make_jsonrpc_call(cinfo, 'receive_encryption_key_part',
+                    self.decryption_condition,
+                    '{0[0]:064x}{0[1]:064x}'.format(self.encryption_key_part),
+                    is_notification = True)
+
+        await asyncio.wait([encryption_key_part_futures[sfid] for sfid in ((self.id, p.eth_address) for p in self.participants) if sfid in encryption_key_part_futures], timeout=COMS_TIMEOUT)
+
+        self.encryption_key = functools.reduce(bitcoin.fast_add,
+            (p.encryption_key_part for p in self.participants), self.encryption_key_part)
+
+        self.phase = ECDKGPhase.key_publication
+        db.Session.commit()
+
+
     def get_or_create_participant_by_address(self, address: int) -> 'ECDKGParticipant':
         participant = (db.Session
             .query(ECDKGParticipant)
@@ -110,7 +222,7 @@ class ECDKG(db.Base):
         return participant
 
 
-    def to_state_message(self, address: int = None) -> dict:
+    def to_state_message(self) -> dict:
         global own_address
 
         msg = {'address': '{:040x}'.format(own_address)}

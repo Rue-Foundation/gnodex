@@ -1,7 +1,6 @@
 import asyncio
 import functools
 import logging
-import math
 
 import bitcoin
 
@@ -29,131 +28,30 @@ def create_dispatcher(address: int = None):
 
 
     @dispatcher_add_async_method
-    async def get_ecdkg_state(decryption_condition):
+    async def get_ecdkg_state(decryption_condition: str, phase: ecdkg.ECDKGPhase = ecdkg.ECDKGPhase.uninitialized):
         ecdkg_obj = ecdkg.ECDKG.get_or_create_by_decryption_condition(decryption_condition)
-        return ecdkg_obj.to_state_message(address)
+        return ecdkg_obj.to_state_message()
 
 
     @dispatcher_add_async_method
     async def get_encryption_key(decryption_condition, notify_others=True):
         ecdkg_obj = ecdkg.ECDKG.get_or_create_by_decryption_condition(decryption_condition)
 
-        async def update_participants():
-            state_futs = {}
-            states = {}
-            for addr, cinfo in networking.channels.items():
-                state_futs[addr] = networking.make_jsonrpc_call(cinfo, 'get_ecdkg_state', decryption_condition)
-
-            await asyncio.wait(state_futs.values(), timeout=ecdkg.COMS_TIMEOUT)
-
-            for addr, state_fut in state_futs.items():
-                if state_fut.done():
-                    try:
-                        result = state_fut.result()
-                    except e:
-                        logging.error(e)
-                    else:
-                        states[addr] = result
-
-            for addr, state in states.items():
-                participant = ecdkg_obj.get_or_create_participant_by_address(addr)
-                participant.update_with_ecdkg_state_message(state)
-                # TODO: make and handle complaints for bad state updates?
-
-
-        # TODO: Is there a better pattern here...?
+        # TODO: Make this pull-based
         if notify_others:
             for addr, cinfo in networking.channels.items():
                 networking.make_jsonrpc_call(cinfo, 'get_encryption_key', decryption_condition, False, is_notification=True)
 
-
-        # TODO: Refactor this crazy method
-
         if ecdkg_obj.phase == ecdkg.ECDKGPhase.uninitialized:
-            await update_participants()
-            # everyone should on agree on participants
-            ecdkg_obj.threshold = math.ceil(ecdkg.THRESHOLD_FACTOR * (len(ecdkg_obj.participants)+1))
-
-            spoly1 = ecdkg.random_polynomial(ecdkg_obj.threshold)
-            spoly2 = ecdkg.random_polynomial(ecdkg_obj.threshold)
-
-            ecdkg_obj.secret_poly1 = spoly1
-            ecdkg_obj.secret_poly2 = spoly2
-
-            ecdkg_obj.phase = ecdkg.ECDKGPhase.key_distribution
-            ecdkg_obj.verification_points = tuple(bitcoin.fast_add(bitcoin.fast_multiply(bitcoin.G, a), bitcoin.fast_multiply(ecdkg.G2, b)) for a, b in zip(spoly1, spoly2))
-
-            db.Session.commit()
-
+            await ecdkg_obj.handle_uninitialized_phase()
         if ecdkg_obj.phase == ecdkg.ECDKGPhase.key_distribution:
-
-            for participant in ecdkg_obj.participants:
-                address = participant.eth_address
-                if address in networking.channels:
-                    cinfo = networking.channels[address]
-                    share1 = ecdkg.eval_polynomial(ecdkg_obj.secret_poly1, address)
-                    share2 = ecdkg.eval_polynomial(ecdkg_obj.secret_poly2, address)
-
-                    networking.make_jsonrpc_call(cinfo, 'receive_secret_shares',
-                        decryption_condition,
-                        '{:064x}'.format(share1),
-                        '{:064x}'.format(share2),
-                        is_notification = True)
-
-            ecdkg_obj.phase = ecdkg.ECDKGPhase.key_verification
-
-            db.Session.commit()
-
+            await ecdkg_obj.handle_key_distribution_phase()
         if ecdkg_obj.phase == ecdkg.ECDKGPhase.key_verification:
-            await update_participants()
-            await asyncio.wait([ecdkg.secret_share_futures[sfid] for sfid in ((ecdkg_obj.id, p.eth_address) for p in ecdkg_obj.participants) if sfid in ecdkg.secret_share_futures], timeout=ecdkg.COMS_TIMEOUT)
-
-            for participant in ecdkg_obj.participants:
-                address = participant.eth_address
-                share1 = participant.secret_share1
-                share2 = participant.secret_share2
-                if share1 is not None and share2 is not None:
-                    vlhs = bitcoin.fast_add(bitcoin.fast_multiply(bitcoin.G, share1),
-                                            bitcoin.fast_multiply(ecdkg.G2, share2))
-                    vrhs = functools.reduce(bitcoin.fast_add, (bitcoin.fast_multiply(ps, pow(ecdkg.own_address, k, bitcoin.N)) for k, ps in enumerate(participant.verification_points)))
-
-                    if vlhs != vrhs:
-                        # TODO: Produce complaints and continue instead of halting here
-                        raise ProtocolError('verification of shares failed')
-                else:
-                    raise ProtocolError('missing some shares')
-
-            ecdkg_obj.phase = ecdkg.ECDKGPhase.key_check
-
-            db.Session.commit()
-
+            await ecdkg_obj.handle_key_verification_phase()
         if ecdkg_obj.phase == ecdkg.ECDKGPhase.key_check:
-            # TODO: Track complaints and filter qualifying set
-
-            ecdkg_obj.phase = ecdkg.ECDKGPhase.key_generation
-
-            db.Session.commit()
-
+            await ecdkg_obj.handle_key_check_phase()
         if ecdkg_obj.phase == ecdkg.ECDKGPhase.key_generation:
-            ecdkg_obj.encryption_key_part = bitcoin.fast_multiply(bitcoin.G, ecdkg_obj.secret_poly1[0])
-
-            for participant in ecdkg_obj.participants:
-                address = participant.eth_address
-                if address in networking.channels:
-                    cinfo = networking.channels[address]
-                    networking.make_jsonrpc_call(cinfo, 'receive_encryption_key_part',
-                        decryption_condition,
-                        '{0[0]:064x}{0[1]:064x}'.format(ecdkg_obj.encryption_key_part),
-                        is_notification = True)
-
-            await asyncio.wait([ecdkg.encryption_key_part_futures[sfid] for sfid in ((ecdkg_obj.id, p.eth_address) for p in ecdkg_obj.participants) if sfid in ecdkg.encryption_key_part_futures], timeout=ecdkg.COMS_TIMEOUT)
-
-            ecdkg_obj.encryption_key = functools.reduce(bitcoin.fast_add,
-                (p.encryption_key_part for p in ecdkg_obj.participants), ecdkg_obj.encryption_key_part)
-
-            ecdkg_obj.phase == ecdkg.ECDKGPhase.key_publication
-
-            db.Session.commit()
+            await ecdkg_obj.handle_key_generation_phase()
 
         return '{0[0]:064x}{0[1]:064x}'.format(ecdkg_obj.encryption_key)
 
@@ -178,6 +76,7 @@ def create_dispatcher(address: int = None):
                 address = participant.eth_address
                 if address in networking.channels:
                     cinfo = networking.channels[address]
+                    # TODO: switch to interpolation of secret shares if waiting doesn't work
                     res = await networking.make_jsonrpc_call(cinfo, 'get_decryption_key_part',
                         decryption_condition)
                     participant.decryption_key_part = int(res, 16)
