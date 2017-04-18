@@ -64,9 +64,9 @@ def send_batch_to_signer_services():
             server.orders = list()
             # TODO: Transition to RETRIEVE_DKG_PK_FOR_ORDERS
             server.current_state = server.State.RECEIVE_MATCHES
-            t = threading.Timer(interval=10.0, function=send_matches_to_signer_services)
-            t.setDaemon(True)
-            t.start()
+        t = threading.Timer(interval=10.0, function=send_matches_to_signer_services)
+        t.setDaemon(True)
+        t.start()
     else:
         with server.state_lock.writer:
             server.current_state = server.State.RECEIVE_ORDERS

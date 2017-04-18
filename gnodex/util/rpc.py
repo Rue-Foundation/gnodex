@@ -24,7 +24,7 @@ def rpc_call(ssl_sock, method, params, default_timeout=False):
     rpc_response = recv_ssl_msg(ssl_sock) if not default_timeout \
               else recv_ssl_msg_timeout(ssl_sock)
     decoded_response = json.loads(rpc_response)
-    return decoded_response["result"]
+    return decoded_response["result"] if decoded_response and ('result' in decoded_response) else None
 
 
 def rpc_response(resp):
@@ -43,11 +43,10 @@ def handle_rpc_client(sock, cert, key_file, dispatcher):
     while True:
         data = recv_ssl_msg(ssl_sock)
         rpc_input = data.decode()
-        print("RPC DEBUG INPUT: " + rpc_input)
+        print("RPC DEBUG INPUT: " + str(rpc_input)[0:120])
         rpc_output = JSONRPCResponseManager.handle(rpc_input, dispatcher)
-        print("RPC DEBUG OUTPUT: " + str(rpc_output))
         if rpc_output:
-            print(rpc_output.json)
+            print("RPC DEBUG OUTPUT: " + str(rpc_output.json)[0:120])
             send_ssl_msg(ssl_sock, rpc_output.json.encode())
 
 
@@ -60,13 +59,12 @@ def handle_rpc_client_stateful(sock, cert, key_file, state_dispatchers, global_d
         while True:
             data = recv_ssl_msg(ssl_sock)
             rpc_input = data.decode()
-            print("RPC DEBUG INPUT: " + rpc_input)
+            print("RPC DEBUG INPUT: " + str(rpc_input)[0:120])
             (state, rwlock) = get_state_lock_func()
             with rwlock.reader:
                 rpc_output = JSONRPCResponseManager.handle(rpc_input, state_dispatchers[state])
                 if rpc_output.error and rpc_output.error["code"] == JSONRPCMethodNotFound.CODE:
                     rpc_output = JSONRPCResponseManager.handle(rpc_input, global_dispatcher)
-            print("RPC DEBUG OUTPUT: " + str(rpc_output))
             if rpc_output:
-                print(rpc_output.json)
+                print("RPC DEBUG OUTPUT: " + str(rpc_output.json)[0:120])
                 send_ssl_msg(ssl_sock, rpc_output.json.encode())
