@@ -5,7 +5,7 @@ import signer
 from signer import server_handler
 from enum import Enum, auto
 from jsonrpc import Dispatcher
-from util.rpc import handle_rpc_client_stateful
+from util.rpc import handle_rpc_client_stateful, handle_rpc_state_changes
 from .server_handler import receive_order_batch
 
 
@@ -26,6 +26,11 @@ def signer_service(args):
 
     # Accept connections and start handling them in own thread
     print("Gnodex Signing Service %d Started" % signer.instance_id)
+    thread = threading.Thread(
+        target=handle_rpc_state_changes,
+        args=(get_state_lock_func, set_state_func),
+        daemon=True)
+    thread.start()
     while True:
         try:
             new_sock = sock.accept()[0]
@@ -45,10 +50,14 @@ def signer_service(args):
             break
 
 
-def get_state_lock_func():
-    return (signer.current_state, signer.state_lock)
-
-
 class State(Enum):
     RECEIVE_ORDER_BATCH = auto()
     RECEIVE_MATCH_COLLECTION = auto()
+
+
+def get_state_lock_func():
+    return (signer.current_state, signer.state_lock, signer.pending_states, signer.state_condition)
+
+
+def set_state_func(state: State):
+    signer.current_state = state

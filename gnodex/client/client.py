@@ -5,6 +5,7 @@ import rlp
 import certs
 import parse
 import merkle
+import time
 from cryptography.exceptions import InvalidSignature
 from models import Order, SignedOrder, SignedReceipt, Chain, ChainLink
 from util import crypto
@@ -70,8 +71,7 @@ def trade_client(args):
             try:
                 crypto.verify(public_key, receipt_rlp_encoded, signed_receipt.signature)
                 print("SIGNATURE OK!")
-                t = threading.Timer(interval=2.0, function=request_membership_verification, args=(signed_receipt,))
-                t.setDaemon(True)
+                t = threading.Thread(target=request_membership_verification, args=(signed_receipt,), daemon=True)
                 t.start()
             except InvalidSignature:
                 print("SIGNATURE VERIFICATION FAILED!!")
@@ -89,31 +89,35 @@ def send_signed_order(ssl_sock, signed_order_rlp: SignedOrder):
 
 
 def request_membership_verification(signed_receipt: SignedReceipt):
-    print("ASKING FOR VERIFICATION")
-    confirmed = False
-    try:
-        ssl_sock = ssl_connect(('localhost', 31337), certs.path_to('server.crt'))
-        chain = send_verification_request(ssl_sock, rlp.encode(signed_receipt))
-        if not chain:
-            return
-        chain_links = [(link.value, link.side) for link in chain.links]
-        # TODO: Cry about missing n out of m signatures
-        confirmed = merkle.check_chain(chain_links)
-    except ConnectionError:
-        pass
-    except TimeoutError:
-        pass
-    finally:
-        if not confirmed:
-            print(
-                "ORDER CONFIRMATION NOT RECEIVED YET (%s, %s)" % (
-                signed_receipt.receipt.order_digest,
-                signed_receipt.receipt.round))
-            t = threading.Timer(interval=2.0, function=request_membership_verification, args=(signed_receipt,))
-            t.setDaemon(True)
-            t.start()
-        else:
-            print("ORDER CONFIRMATION RECEIVED!!!")
+    repeat_thread = True
+
+    while repeat_thread:
+        time.sleep(2)
+
+        print("ASKING FOR VERIFICATION")
+        confirmed = False
+        try:
+            ssl_sock = ssl_connect(('localhost', 31337), certs.path_to('server.crt'))
+            with ssl_sock:
+                chain = send_verification_request(ssl_sock, rlp.encode(signed_receipt))
+                if not chain:
+                    continue
+                chain_links = [(link.value, link.side) for link in chain.links]
+                # TODO: Cry about missing n out of m signatures
+                confirmed = merkle.check_chain(chain_links)
+        except ConnectionError:
+            print("CONNECTION ERROR")
+        except TimeoutError:
+            print("VERIFICATION REQUEST TIMEOUT")
+        finally:
+            if not confirmed:
+                print(
+                    "ORDER CONFIRMATION NOT RECEIVED YET (%s, %s)" % (
+                    signed_receipt.receipt.order_digest,
+                    signed_receipt.receipt.round))
+            else:
+                repeat_thread = False
+                print("ORDER CONFIRMATION RECEIVED!!!")
 
 
 def send_verification_request(ssl_sock, signed_receipt_rlp):

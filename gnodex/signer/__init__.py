@@ -1,6 +1,7 @@
 """Signing service"""
 
 import certs
+import threading
 from util import crypto, locking
 from .service import signer_service, State
 
@@ -9,6 +10,8 @@ private_key = None
 instance_id = None
 current_state = None
 state_lock = None
+pending_states = None
+state_condition = None
 current_round = None
 
 
@@ -17,10 +20,14 @@ def init(args):
     global instance_id
     global current_state
     global state_lock
+    global pending_states
+    global state_condition
     global current_round
 
     current_state = State.RECEIVE_ORDER_BATCH
     state_lock = locking.RWLock()
+    pending_states = list()
+    state_condition = threading.Condition()
     current_round = 0
 
     instance_id = args.id

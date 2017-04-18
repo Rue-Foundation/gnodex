@@ -4,7 +4,7 @@ import certs
 import server
 from server import client_handler, matcher_handler, sig_collector
 from jsonrpc import Dispatcher
-from util.rpc import handle_rpc_client_stateful
+from util.rpc import handle_rpc_client_stateful, handle_rpc_state_changes
 from enum import Enum, auto
 
 
@@ -16,8 +16,7 @@ def master_state_service(args):
     sock.listen()
 
     # Create order batch submission timer
-    t = threading.Timer(interval=10.0, function=sig_collector.send_batch_to_signer_services)
-    t.setDaemon(True)
+    t = threading.Thread(target=sig_collector.send_batch_to_signer_services, daemon=True)
     t.start()
 
     # Configure RPC dispatchers
@@ -52,8 +51,8 @@ def master_state_service(args):
                     certs.path_to('server.key'),
                     state_dispatchers,
                     global_dispatcher,
-                    get_state_lock_func))
-            thread.setDaemon(True)
+                    get_state_lock_func),
+                daemon=True)
             thread.start()
         except KeyboardInterrupt:
             print("Master State Service Exit.")

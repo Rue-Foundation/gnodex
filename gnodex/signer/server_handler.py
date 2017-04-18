@@ -31,8 +31,8 @@ def receive_order_batch(signed_batch_rlp_rpc):
         print("BATCH SIGNED")
         commitment_signature = crypto.sign_rlp(signer.private_key, commitment)
         # Wait for match collection
-        with signer.state_lock.writer:
-            signer.current_state = signer.State.RECEIVE_MATCH_COLLECTION
+        signer.pending_states.append(signer.State.RECEIVE_MATCH_COLLECTION)
+        signer.state_condition.notify()
         print("AWAITING BATCH MATCHING!")
     except InvalidSignature:
         print("COULD NOT VERIFY SERVER SIGNATURE!")

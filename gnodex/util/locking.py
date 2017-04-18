@@ -1,5 +1,5 @@
 import threading
-
+import sys
 
 class RWLock:
     """
@@ -12,7 +12,7 @@ class RWLock:
         self.__read_switch = _Switch()
         self.__write_switch = _Switch()
         self.__no_readers = threading.Lock()
-        self.__no_writers = threading.RLock()
+        self.__no_writers = threading.Lock()
         self.__readers_queue = threading.Lock()
         self.reader = _Reader(self)
         self.writer = _Writer(self)

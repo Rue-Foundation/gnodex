@@ -59,12 +59,25 @@ def handle_rpc_client_stateful(sock, cert, key_file, state_dispatchers, global_d
         while True:
             data = recv_ssl_msg(ssl_sock)
             rpc_input = data.decode()
-            print("RPC DEBUG INPUT: " + str(rpc_input)[0:120])
-            (state, rwlock) = get_state_lock_func()
+            print("RPC STATEFUL DEBUG INPUT: " + str(rpc_input)[0:120])
+            (state, rwlock) = get_state_lock_func()[0:2]
             with rwlock.reader:
                 rpc_output = JSONRPCResponseManager.handle(rpc_input, state_dispatchers[state])
                 if rpc_output.error and rpc_output.error["code"] == JSONRPCMethodNotFound.CODE:
                     rpc_output = JSONRPCResponseManager.handle(rpc_input, global_dispatcher)
             if rpc_output:
-                print("RPC DEBUG OUTPUT: " + str(rpc_output.json)[0:120])
+                print("RPC STATEFUL DEBUG OUTPUT: " + str(rpc_output.json)[0:120])
                 send_ssl_msg(ssl_sock, rpc_output.json.encode())
+
+
+def handle_rpc_state_changes(get_state_lock_func, set_state_func):
+    (rwlock, pending, condition) = get_state_lock_func()[1:4]
+    while True:
+        with condition:
+            condition.wait()
+            with rwlock.writer:
+                if not pending:
+                    continue
+                last = pending.pop()
+                del pending[:]
+                set_state_func(last)
