@@ -102,7 +102,7 @@ def request_membership_verification(signed_receipt: SignedReceipt):
                 chain = send_verification_request(ssl_sock, rlp.encode(signed_receipt))
                 if not chain:
                     continue
-                chain_links = [(link.value, link.side) for link in chain.links]
+                chain_links = [(link.value, link.side.decode()) for link in chain.links]
                 # TODO: Cry about missing n out of m signatures
                 confirmed = merkle.check_chain(chain_links)
         except ConnectionError:
