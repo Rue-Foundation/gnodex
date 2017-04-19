@@ -141,6 +141,11 @@ class ECDKG(db.Base):
         db.Session.commit()
 
 
+    async def run_until_phase(self, target_phase):
+        while self.phase < target_phase:
+            await getattr(self, 'handle_{}_phase'.format(self.phase.name))()
+
+
     async def handle_key_verification_phase(self):
         global own_address
 

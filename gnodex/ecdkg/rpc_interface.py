@@ -42,16 +42,7 @@ def create_dispatcher(address: int = None):
             for addr, cinfo in networking.channels.items():
                 networking.make_jsonrpc_call(cinfo, 'get_encryption_key', decryption_condition, False, is_notification=True)
 
-        if ecdkg_obj.phase == ecdkg.ECDKGPhase.uninitialized:
-            await ecdkg_obj.handle_uninitialized_phase()
-        if ecdkg_obj.phase == ecdkg.ECDKGPhase.key_distribution:
-            await ecdkg_obj.handle_key_distribution_phase()
-        if ecdkg_obj.phase == ecdkg.ECDKGPhase.key_verification:
-            await ecdkg_obj.handle_key_verification_phase()
-        if ecdkg_obj.phase == ecdkg.ECDKGPhase.key_check:
-            await ecdkg_obj.handle_key_check_phase()
-        if ecdkg_obj.phase == ecdkg.ECDKGPhase.key_generation:
-            await ecdkg_obj.handle_key_generation_phase()
+        await ecdkg_obj.run_until_phase(ecdkg.ECDKGPhase.key_publication)
 
         return '{0[0]:064x}{0[1]:064x}'.format(ecdkg_obj.encryption_key)
 
