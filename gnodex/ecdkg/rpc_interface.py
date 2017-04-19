@@ -39,8 +39,9 @@ def create_dispatcher(address: int = None):
 
         # TODO: Make this pull-based
         if notify_others:
-            for addr, cinfo in networking.channels.items():
-                networking.make_jsonrpc_call(cinfo, 'get_encryption_key', decryption_condition, False, is_notification=True)
+            await networking.broadcast_jsonrpc_call_on_all_channels(
+                'get_encryption_key', decryption_condition, False,
+                is_notification=True)
 
         await ecdkg_obj.run_until_phase(ecdkg.ECDKGPhase.key_publication)
 
@@ -63,14 +64,16 @@ def create_dispatcher(address: int = None):
         ecdkg_obj = ecdkg.ECDKG.get_or_create_by_decryption_condition(decryption_condition)
 
         if ecdkg_obj.decryption_key is None:
+            dec_key_parts = await networking.broadcast_jsonrpc_call_on_all_channels(
+                'get_decryption_key_part', decryption_condition)
+
             for participant in ecdkg_obj.participants:
                 address = participant.eth_address
-                if address in networking.channels:
-                    cinfo = networking.channels[address]
+                if address in dec_key_parts:
+                    participant.decryption_key_part = int(dec_key_parts[address], 16)
+                else:
                     # TODO: switch to interpolation of secret shares if waiting doesn't work
-                    res = await networking.make_jsonrpc_call(cinfo, 'get_decryption_key_part',
-                        decryption_condition)
-                    participant.decryption_key_part = int(res, 16)
+                    raise ProtocolError('missing decryption key part!')
 
             ecdkg_obj.decryption_key = (sum(p.decryption_key_part for p in ecdkg_obj.participants) + ecdkg_obj.secret_poly1[0]) % bitcoin.N
 
