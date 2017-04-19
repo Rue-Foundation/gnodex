@@ -199,6 +199,36 @@ async def get_response_data(res: 'jsonrpc response', timeout: 'seconds' = DEFAUL
         return res_data
 
 
+async def broadcast_jsonrpc_call_on_all_channels(method_name: str, *args,
+                                                 timeout: 'seconds' = DEFAULT_TIMEOUT,
+                                                 is_notification: bool = False,
+                                                 loop: asyncio.AbstractEventLoop = None) -> dict:
+    res_futures = {}
+
+    for addr, cinfo in channels.items():
+        res_futures[addr] = make_jsonrpc_call(cinfo, method_name, *args,
+                                              is_notification=is_notification,
+                                              loop=loop)
+
+    if is_notification:
+        return
+
+    await asyncio.wait(res_futures.values(), timeout=timeout)
+
+    res = {}
+
+    for addr, res_future in res_futures.items():
+        if res_future.done():
+            try:
+                temp = res_future.result()
+            except Exception as e:
+                logging.error(e)
+            else:
+                res[addr] = temp
+
+    return res
+
+
 ################################################################################
 
 async def emit_heartbeats():

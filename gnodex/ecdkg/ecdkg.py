@@ -84,21 +84,7 @@ class ECDKG(db.Base):
 
 
     async def update_participants(self):
-        state_futs = {}
-        states = {}
-        for addr, cinfo in networking.channels.items():
-            state_futs[addr] = networking.make_jsonrpc_call(cinfo, 'get_ecdkg_state', self.decryption_condition)
-
-        await asyncio.wait(state_futs.values(), timeout=COMS_TIMEOUT)
-
-        for addr, state_fut in state_futs.items():
-            if state_fut.done():
-                try:
-                    result = state_fut.result()
-                except e:
-                    logging.error(e)
-                else:
-                    states[addr] = result
+        states = await networking.broadcast_jsonrpc_call_on_all_channels('get_ecdkg_state', self.decryption_condition)
 
         for addr, state in states.items():
             participant = self.get_or_create_participant_by_address(addr)
