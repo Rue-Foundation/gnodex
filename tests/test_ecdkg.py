@@ -12,6 +12,7 @@ import time
 from contextlib import ExitStack, contextmanager
 from datetime import datetime
 
+import bitcoin
 import psutil
 import pytest
 
@@ -161,11 +162,11 @@ def test_nodes_match_state(nodes, request_timeout):
     assert(all(r['decryption_condition'] == responses[0]['decryption_condition'] for r in responses[1:]))
 
 
-def test_nodes_match_pubkey(nodes, request_timeout):
+def test_nodes_match_enckey_and_deckeys(nodes, request_timeout):
     wait_for_all_nodes_connected(nodes, request_timeout)
 
     deccond = 'past {}'.format(datetime.utcnow().isoformat())
-    responses = [requests.post('https://localhost:{}'.format(n.port),
+    enckeys = [requests.post('https://localhost:{}'.format(n.port),
         verify=False,
         timeout=request_timeout,
         data=json.dumps({
@@ -174,4 +175,27 @@ def test_nodes_match_pubkey(nodes, request_timeout):
             'params': [deccond],
         })).json()['result'] for n in nodes]
 
-    assert(all(r == responses[0] for r in responses[1:]))
+    enckeys = [tuple(int(ek[i:i+64], 16) for i in (0, 64)) for ek in enckeys]
+
+    for ek in enckeys:
+        util.validate_curve_point(ek)
+
+    assert(all(ek == enckeys[0] for ek in enckeys[1:]))
+
+    deckeys = [requests.post('https://localhost:{}'.format(n.port),
+        verify=False,
+        timeout=request_timeout,
+        data=json.dumps({
+            'id': 'honk',
+            'method': 'get_decryption_key',
+            'params': [deccond],
+        })).json()['result'] for n in nodes]
+
+    deckeys = [int(dk, 16) for dk in deckeys]
+
+    for dk in deckeys:
+        util.validate_private_value(dk)
+
+    assert(all(dk == deckeys[0] for dk in deckeys[1:]))
+
+    assert(bitcoin.fast_multiply(bitcoin.G, deckeys[0]) == enckeys[0])

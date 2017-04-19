@@ -51,6 +51,7 @@ class ECDKGPhase(enum.IntEnum):
     key_check = 3
     key_generation = 4
     key_publication = 5
+    complete = 6
 
 
 class ECDKG(db.Base):
@@ -92,6 +93,11 @@ class ECDKG(db.Base):
             # TODO: make and handle complaints for bad state updates?
 
 
+    async def run_until_phase(self, target_phase):
+        while self.phase < target_phase:
+            await getattr(self, 'handle_{}_phase'.format(self.phase.name))()
+
+
     async def handle_uninitialized_phase(self):
         await self.update_participants()
         # everyone should on agree on participants
@@ -125,11 +131,6 @@ class ECDKG(db.Base):
 
         self.phase = ECDKGPhase.key_verification
         db.Session.commit()
-
-
-    async def run_until_phase(self, target_phase):
-        while self.phase < target_phase:
-            await getattr(self, 'handle_{}_phase'.format(self.phase.name))()
 
 
     async def handle_key_verification_phase(self):
@@ -182,6 +183,26 @@ class ECDKG(db.Base):
             (p.encryption_key_part for p in self.participants), self.encryption_key_part)
 
         self.phase = ECDKGPhase.key_publication
+        db.Session.commit()
+
+
+    async def handle_key_publication_phase(self):
+        await util.decryption_condition_satisfied(self.decryption_condition)
+
+        dec_key_parts = await networking.broadcast_jsonrpc_call_on_all_channels(
+            'get_decryption_key_part', self.decryption_condition)
+
+        for p in self.participants:
+            address = p.eth_address
+            if address in dec_key_parts:
+                p.decryption_key_part = int(dec_key_parts[address], 16)
+            else:
+                # TODO: switch to interpolation of secret shares if waiting doesn't work
+                raise ProtocolError('missing decryption key part!')
+
+        self.decryption_key = (sum(p.decryption_key_part for p in self.participants) + self.secret_poly1[0]) % bitcoin.N
+
+        self.phase = ECDKGPhase.complete
         db.Session.commit()
 
 

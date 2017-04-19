@@ -59,26 +59,8 @@ def create_dispatcher(address: int = None):
     @dispatcher_add_async_method
     async def get_decryption_key(decryption_condition):
         await get_encryption_key(decryption_condition)
-        await util.decryption_condition_satisfied(decryption_condition)
-
         ecdkg_obj = ecdkg.ECDKG.get_or_create_by_decryption_condition(decryption_condition)
-
-        if ecdkg_obj.decryption_key is None:
-            dec_key_parts = await networking.broadcast_jsonrpc_call_on_all_channels(
-                'get_decryption_key_part', decryption_condition)
-
-            for participant in ecdkg_obj.participants:
-                address = participant.eth_address
-                if address in dec_key_parts:
-                    participant.decryption_key_part = int(dec_key_parts[address], 16)
-                else:
-                    # TODO: switch to interpolation of secret shares if waiting doesn't work
-                    raise ProtocolError('missing decryption key part!')
-
-            ecdkg_obj.decryption_key = (sum(p.decryption_key_part for p in ecdkg_obj.participants) + ecdkg_obj.secret_poly1[0]) % bitcoin.N
-
-            db.Session.commit()
-
+        await ecdkg_obj.run_until_phase(ecdkg.ECDKGPhase.complete)
         return '{:064x}'.format(ecdkg_obj.decryption_key)
 
 
