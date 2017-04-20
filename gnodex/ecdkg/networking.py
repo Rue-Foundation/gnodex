@@ -138,7 +138,9 @@ async def establish_channel(eth_address: int, reader: asyncio.StreamReader, writ
                 res = JSONRPCResponseManager.handle(json.dumps(msg), channels[eth_address]['rpcdispatcher'])
                 if res is not None:
                     res_data = await get_response_data(res)
-                    writer.write(json.dumps(res_data).encode())
+                    res_str = json.dumps(res_data)
+                    logging.debug('sending response {}'.format(res_str))
+                    writer.write(res_str.encode())
                     writer.write(b'\n')
             elif 'id' in msg:
                 fut_id = msg['id']
@@ -180,7 +182,9 @@ def make_jsonrpc_call(cinfo: 'channel info',
             response_futures[reqid] = asyncio.Future(loop=loop)
 
         writer = cinfo['writer']
-        writer.write(json.dumps(msg).encode())
+        msg_str = json.dumps(msg)
+        logging.debug('sending message: {}'.format(msg_str))
+        writer.write(msg_str.encode())
         writer.write(b'\n')
 
         if not is_notification:

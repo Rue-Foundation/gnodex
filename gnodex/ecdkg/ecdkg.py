@@ -1,5 +1,4 @@
 import asyncio
-import collections
 import enum
 import functools
 import itertools
@@ -23,9 +22,6 @@ THRESHOLD_FACTOR = .5
 G2 = (0xb25b5ea8b8b230e5574fec0182e809e3455701323968c602ab56b458d0ba96bf,
       0x13edfe75e1c88e030eda220ffc74802144aec67c4e51cb49699d4401c122e19c)
 util.validate_curve_point(G2)
-
-secret_share_futures = collections.OrderedDict()
-encryption_key_part_futures = collections.OrderedDict()
 
 
 def random_polynomial(order: int) -> tuple:
@@ -84,22 +80,16 @@ class ECDKG(db.Base):
         return ecdkg_obj
 
 
-    async def update_participants(self):
-        states = await networking.broadcast_jsonrpc_call_on_all_channels('get_ecdkg_state', self.decryption_condition)
-
-        for addr, state in states.items():
-            participant = self.get_or_create_participant_by_address(addr)
-            participant.update_with_ecdkg_state_message(state)
-            # TODO: make and handle complaints for bad state updates?
-
-
     async def run_until_phase(self, target_phase):
         while self.phase < target_phase:
+            logging.info('handling {} phase...'.format(self.phase.name))
             await getattr(self, 'handle_{}_phase'.format(self.phase.name))()
 
 
     async def handle_uninitialized_phase(self):
-        await self.update_participants()
+        for addr in networking.channels.keys():
+            self.get_or_create_participant_by_address(addr)
+
         # everyone should on agree on participants
         self.threshold = math.ceil(THRESHOLD_FACTOR * (len(self.participants)+1))
 
@@ -109,6 +99,8 @@ class ECDKG(db.Base):
         self.secret_poly1 = spoly1
         self.secret_poly2 = spoly2
 
+        self.encryption_key_part = bitcoin.fast_multiply(bitcoin.G, self.secret_poly1[0])
+
         self.verification_points = tuple(bitcoin.fast_add(bitcoin.fast_multiply(bitcoin.G, a), bitcoin.fast_multiply(G2, b)) for a, b in zip(spoly1, spoly2))
 
         self.phase = ECDKGPhase.key_distribution
@@ -116,18 +108,29 @@ class ECDKG(db.Base):
 
 
     async def handle_key_distribution_phase(self):
+        secret_shares = await networking.broadcast_jsonrpc_call_on_all_channels(
+            'get_secret_shares', self.decryption_condition)
+
         for participant in self.participants:
             address = participant.eth_address
-            if address in networking.channels:
-                cinfo = networking.channels[address]
-                share1 = eval_polynomial(self.secret_poly1, address)
-                share2 = eval_polynomial(self.secret_poly2, address)
 
-                networking.make_jsonrpc_call(cinfo, 'receive_secret_shares',
-                    self.decryption_condition,
-                    '{:064x}'.format(share1),
-                    '{:064x}'.format(share2),
-                    is_notification = True)
+            if address in secret_shares:
+                share1, share2 = (int(s, 16) for s in secret_shares[address])
+                participant.secret_share1 = share1
+                participant.secret_share2 = share2
+            else:
+                logging.warning('missing share from address {:040x}'.format(address))
+
+        logging.info('set all secret shares')
+        verification_points = await networking.broadcast_jsonrpc_call_on_all_channels(
+            'get_verification_points', self.decryption_condition)
+
+        for participant in self.participants:
+            address = participant.eth_address
+            if address in verification_points:
+                participant.verification_points = tuple(tuple(int(ptstr[i:i+64], 16) for i in (0, 64)) for ptstr in verification_points[address])
+            else:
+                logging.warning('missing verification_points from address {:040x}'.format(address))
 
         self.phase = ECDKGPhase.key_verification
         db.Session.commit()
@@ -136,13 +139,10 @@ class ECDKG(db.Base):
     async def handle_key_verification_phase(self):
         global own_address
 
-        await self.update_participants()
-        await asyncio.wait([secret_share_futures[sfid] for sfid in ((self.id, p.eth_address) for p in self.participants) if sfid in secret_share_futures], timeout=COMS_TIMEOUT)
-
         for participant in self.participants:
-            address = participant.eth_address
             share1 = participant.secret_share1
             share2 = participant.secret_share2
+
             if share1 is not None and share2 is not None:
                 vlhs = bitcoin.fast_add(bitcoin.fast_multiply(bitcoin.G, share1),
                                         bitcoin.fast_multiply(G2, share2))
@@ -152,32 +152,31 @@ class ECDKG(db.Base):
                     # TODO: Produce complaints and continue instead of halting here
                     raise ProtocolError('verification of shares failed')
             else:
-                raise ProtocolError('missing some shares')
+                # TODO: Produce complaints and continue instead of halting here
+                raise ProtocolError('missing share from address {:040x}'.format(address))
 
         self.phase = ECDKGPhase.key_check
         db.Session.commit()
 
 
     async def handle_key_check_phase(self):
-        # TODO: Track complaints and filter qualifying set
-
+        # TODO: Get complaints and filter qualifying set
         self.phase = ECDKGPhase.key_generation
         db.Session.commit()
 
 
     async def handle_key_generation_phase(self):
-        self.encryption_key_part = bitcoin.fast_multiply(bitcoin.G, self.secret_poly1[0])
+        encryption_key_parts = await networking.broadcast_jsonrpc_call_on_all_channels(
+            'get_encryption_key_part', self.decryption_condition)
 
         for participant in self.participants:
             address = participant.eth_address
-            if address in networking.channels:
-                cinfo = networking.channels[address]
-                networking.make_jsonrpc_call(cinfo, 'receive_encryption_key_part',
-                    self.decryption_condition,
-                    '{0[0]:064x}{0[1]:064x}'.format(self.encryption_key_part),
-                    is_notification = True)
-
-        await asyncio.wait([encryption_key_part_futures[sfid] for sfid in ((self.id, p.eth_address) for p in self.participants) if sfid in encryption_key_part_futures], timeout=COMS_TIMEOUT)
+            if address in encryption_key_parts:
+                ekp = tuple(int(encryption_key_parts[address][i:i+64], 16) for i in (0, 64))
+                participant.encryption_key_part = ekp
+            else:
+                # TODO: this is supposed to be broadcast... maybe try getting it from other nodes instead?
+                raise ProtocolError('missing encryption_key_part from address {:040x}'.format(address))
 
         self.encryption_key = functools.reduce(bitcoin.fast_add,
             (p.encryption_key_part for p in self.participants), self.encryption_key_part)
@@ -220,18 +219,12 @@ class ECDKG(db.Base):
 
         sfid = (self.id, address)
 
-        if sfid not in secret_share_futures:
-            secret_share_futures[sfid] = asyncio.Future()
-            if (participant.secret_share1 is not None and
-                participant.secret_share2 is not None):
-                secret_share_futures[sfid].set_result((participant.secret_share1, participant.secret_share2))
-
-        if sfid not in encryption_key_part_futures:
-            encryption_key_part_futures[sfid] = asyncio.Future()
-            if participant.encryption_key_part is not None:
-                encryption_key_part_futures[sfid].set_result(participant.encryption_key_part)
-
         return participant
+
+
+    def get_secret_shares(self, address: int) -> (int, int):
+        return (eval_polynomial(self.secret_poly1, address),
+                eval_polynomial(self.secret_poly2, address))
 
 
     def to_state_message(self) -> dict:
@@ -280,16 +273,3 @@ class ECDKGParticipant(db.Base):
                 msg[attr] = '{0[0]:064x}{0[1]:064x}'.format(val)
 
         return msg
-
-
-    def update_with_ecdkg_state_message(self, state: 'ECDKG state'):
-        if 'encryption_key_part' in state:
-            enc_key_part = tuple(int(state['encryption_key_part'][i:i+64], 16) for i in (0, 64))
-            if getattr(self, 'encryption_key_part') not in (None, enc_key_part):
-                logging.error('changing encryption key part!')
-            self.encryption_key_part = enc_key_part
-
-        if 'verification_points' in state:
-            vpts = tuple(tuple(int(ptstr[i:i+64], 16) for i in (0, 64)) for ptstr in state['verification_points'])
-            self.verification_points = vpts
-            assert(tuple('{0[0]:064x}{0[1]:064x}'.format(pt) for pt in vpts) == tuple(state['verification_points']))
