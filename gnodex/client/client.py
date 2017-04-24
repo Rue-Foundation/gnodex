@@ -2,16 +2,16 @@ import threading
 import pprint
 import sys
 import rlp
-import certs
 import parse
 import merkle
 import time
 import os
 from cryptography.exceptions import InvalidSignature
-from models import Order, SignedOrder, SignedReceipt, Chain, ChainLink
-from util import crypto
-from util.ssl_sock_helper import recv_ssl_msg, send_ssl_msg, ssl_connect, recv_ssl_msg_timeout
-from util.rpc import rpc_call_rlp
+from  .. import certs
+from ..models import Order, SignedOrder, SignedReceipt, Chain
+from ..util import crypto
+from ..util.ssl_sock_helper import ssl_connect
+from ..util.rpc import rpc_call_rlp
 
 
 def trade_client(args):

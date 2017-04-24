@@ -4,6 +4,7 @@ import argparse
 import importlib
 import sys
 
+PACKAGE_NAME = 'gnodex'
 SERVICES = ('client', 'ecdkg', 'server', 'signer', 'matcher')
 
 
@@ -12,8 +13,8 @@ def main():
     subparsers = parser.add_subparsers()
 
     for mod_name in SERVICES:
-        mod = importlib.import_module(mod_name, package='.')
-        subparser = subparsers.add_parser(mod.__name__, description=mod.__doc__)
+        mod = importlib.import_module('.'+mod_name, package=PACKAGE_NAME)
+        subparser = subparsers.add_parser(mod.__name__[mod.__name__.rfind('.')+1:], description=mod.__doc__)
         mod.setup_argparser(subparser)
 
     args = parser.parse_args()

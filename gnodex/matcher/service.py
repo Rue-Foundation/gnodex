@@ -1,12 +1,11 @@
-import certs
-import matcher
 import rlp
 import threading
 import time
-from util.ssl_sock_helper import ssl_connect
-from util.rpc import rpc_call_rlp
-from models import SignedBatch
-from matcher import batch_processor
+from .. import certs
+from ..util.ssl_sock_helper import ssl_connect
+from ..util.rpc import rpc_call_rlp
+from ..models import SignedBatch
+from ..matcher import batch_processor
 
 
 def batch_matcher_service(args):

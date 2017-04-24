@@ -1,8 +1,8 @@
 """Signing service"""
 
-import certs
 import threading
-from util import crypto, locking
+from .. import certs
+from ..util import crypto, locking
 from .service import signer_service, State
 
 """Package-wide variables"""

@@ -1,8 +1,9 @@
 """Master state service server"""
 
+import threading
+from .. import certs
+from ..util import crypto, locking
 from .service import master_state_service, State
-from util import crypto, locking
-import certs
 
 """Package-wide variables"""
 public_key = None

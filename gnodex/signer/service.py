@@ -1,12 +1,11 @@
 import socket
 import threading
-import certs
-import signer
-from signer import server_handler
 from enum import Enum, auto
 from jsonrpc import Dispatcher
-from util.rpc import handle_rpc_client_stateful, handle_rpc_state_changes
-from .server_handler import receive_order_batch
+from .. import certs
+from .. import signer
+from ..signer import server_handler
+from ..util.rpc import handle_rpc_client_stateful, handle_rpc_state_changes
 
 
 def signer_service(args):
