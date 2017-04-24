@@ -4,7 +4,7 @@ import time
 from .. import certs
 from ..util.ssl_sock_helper import ssl_connect
 from ..util.rpc import rpc_call_rlp
-from ..models import SignedBatch
+from ..models import SignedBatch, SignedReceipt
 from ..matcher import batch_processor
 
 
@@ -33,13 +33,30 @@ def request_batch():
                 signed_batch_rlp = rpc_call_rlp(ssl_sock, "return_latest_signed_batch", {}, default_timeout=True)
                 if signed_batch_rlp:
                     signed_batch = rlp.decode(signed_batch_rlp, SignedBatch)
+                if not signed_batch:
+                    print("NO BATCH AVAILABLE YET")
+                    repeat_thread = True
+                    continue
+                print("RECEIVED BATCH")
+                signed_matching = batch_processor.process_batch(signed_batch)
+                # TODO Encrypt matching with DKG
+                print("SENDING MATCHING")
+                signed_receipt = send_signed_matching(ssl_sock, rlp.encode(signed_matching))
+                if not signed_receipt:
+                    print("RECEIPT NOT RECEIVED")
+                    repeat_thread = True
+                    continue
+                print("RECEIVED RECEIPT")
+
         except TimeoutError:
+            repeat_thread = True
             print("REQUEST TIMED OUT")
 
-        if not signed_batch:
-            print("NO BATCH AVAILABLE YET")
-            repeat_thread = True
-            continue
-        print("RECEIVED BATCH")
-        print(signed_batch.batch.orders)
-        batch_processor.process_batch(signed_batch)
+
+def send_signed_matching(ssl_sock, signed_matching_rlp):
+    signed_receipt_rlp = rpc_call_rlp(
+        ssl_sock,
+        "receive_matching",
+        {'signed_matching_rlp_rpc': signed_matching_rlp},
+        default_timeout=True)
+    return rlp.decode(signed_receipt_rlp, SignedReceipt)

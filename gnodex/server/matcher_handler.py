@@ -6,9 +6,9 @@ from ..util.rpc import rpc_response, rpc_param_decode
 
 
 def receive_matching(signed_matching_rlp_rpc):
-    # TODO Verify Sig
+    # TODO Verify Matcher Sig
     signed_matching_rlp = rpc_param_decode(signed_matching_rlp_rpc)
-    signed_matching = rlp.decode(signed_matching_rlp, SignedOrder)
+    signed_matching = rlp.decode(signed_matching_rlp, SignedMatching)
     print("MATCHING RECEIVED")
     server.matchings.append(signed_matching)
     receipt_round = len(server.batches)

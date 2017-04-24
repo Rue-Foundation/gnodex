@@ -2,7 +2,7 @@ import functools
 import rlp
 import bisect
 from .. import matcher
-from ..models import Route, Matching, SignedMatching
+from ..models import Route, Matching, SignedMatching, Signature
 from ..util import crypto, search
 
 
@@ -20,6 +20,7 @@ def find_crossing_points(bids, asks):
     j = search.ternary_search(0, len(asks)-1, g)
     return i, j
 """
+
 
 def process_batch(signed_batch):
     # TODO Decrypt Order Batch
@@ -87,7 +88,7 @@ def process_batch(signed_batch):
     # Create routes
     orders = [bids, asks]
     routes = list()
-    for p in range(0,2):
+    for p in range(0, 2):
         sell = orders[0]
         buy = orders[1]
         i = 0
@@ -122,5 +123,8 @@ def process_batch(signed_batch):
 
     # Create Matching
     matching = Matching(routes, signed_batch_hash)
-    signed_matching = SignedMatching(matching, crypto.sign_rlp(matcher.private_key, matching))
+    signed_matching = SignedMatching(
+        matching,
+        [Signature('matcher', crypto.sign_rlp(matcher.private_key, matching))])
     print(signed_matching)
+    return signed_matching
