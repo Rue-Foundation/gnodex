@@ -14,7 +14,7 @@ class Route(rlp.Serializable):
 class Matching(rlp.Serializable):
     fields = [
         ('routes', CountableList(Route)),
-        ('batch_hash', raw)
+        ('signed_batch_hash', raw)
     ]
 
 

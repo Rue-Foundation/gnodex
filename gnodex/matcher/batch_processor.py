@@ -1,10 +1,31 @@
 import functools
+import rlp
+import bisect
+from .. import matcher
+from ..models import Route, Matching, SignedMatching
+from ..util import crypto, search
 
+
+# TODO Find crossing points using ternary search
+"""
+def find_crossing_points(bids, asks):
+    def f(i):
+        # number of elements to the right and lower
+        pass
+    def g(j):
+        # number of elements to the right and higher
+        return max(0, len(bids) - max(i, bisect.bisect_left(bids, asks[i])))
+
+    i = search.ternary_search(0, len(bids)-1, f)
+    j = search.ternary_search(0, len(asks)-1, g)
+    return i, j
+"""
 
 def process_batch(signed_batch):
     # TODO Decrypt Order Batch
     # TODO Generalize to match more than 2 token types
     signed_orders = signed_batch.batch.orders
+    signed_batch_hash = crypto.sha256_utf8(rlp.encode(signed_batch))
     if len(signed_orders) == 0:
         print("EMTPY BATCH")
         return
@@ -56,8 +77,50 @@ def process_batch(signed_batch):
     # Sort asks descendingly by price
     asks.sort(key=functools.cmp_to_key(lambda a, b: a.buy_amount*b.sell_amount < b.buy_amount*a.sell_amount))
     asks.reverse()
+    # TODO Filter orders by crossing points rather than uniform clearing price
+    """
+    i, j = find_crossing_points(bids, asks)
+    bids = bids[i:]
+    asks = asks[j:]
+    """
 
-    # Move with two pointers across bids and asks
-    # Create routes from bids sell_token to asks buy_token until 1) asks satisfied or 2) bids exhausted
-    # Create routes from asks sell_token to bids buy_token until <if 1)> asks exhausted <else if 2)> bids satisfied
-    # Create routes to collect remaining tokens from EITHER buy_token or sell_token, depending on case, as wellfare
+    # Create routes
+    orders = [bids, asks]
+    routes = list()
+    for p in range(0,2):
+        sell = orders[0]
+        buy = orders[1]
+        i = 0
+        j = 0
+        supply = sell[0].sell_amount
+        demand = buy[0].buy_amount
+        while i < len(sell) and j < len(buy):
+            seller = sell[i]
+            buyer = buy[j]
+            if supply < demand:
+                sold_amount = supply
+                i += 1
+                supply = sell[i].sell_amount if i < len(sell) else None
+                demand -= sold_amount
+            elif supply > demand:
+                sold_amount = demand
+                j += 1
+                supply -= sold_amount
+                demand = buy[j].buy_amount if j < len(buy) else None
+            else:
+                sold_amount = supply
+                i += 1
+                j += 1
+                supply = sell[i].sell_amount if i < len(sell) else None
+                demand = buy[j].buy_amount if j < len(buy) else None
+
+            routes.append(Route(seller.id, buyer.id, sold_amount))
+            print('%s -> %s: %s %s' % (seller.id, buyer.id, sold_amount, seller.sell_token))
+
+        if not p:
+            orders.reverse()
+
+    # Create Matching
+    matching = Matching(routes, signed_batch_hash)
+    signed_matching = SignedMatching(matching, crypto.sign_rlp(matcher.private_key, matching))
+    print(signed_matching)
