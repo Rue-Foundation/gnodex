@@ -125,6 +125,6 @@ def process_batch(signed_batch):
     matching = Matching(routes, signed_batch_hash)
     signed_matching = SignedMatching(
         matching,
-        [Signature('matcher', crypto.sign_rlp(matcher.private_key, matching))])
+        Signature('matcher', crypto.sign_rlp(matcher.private_key, matching)))
     print(signed_matching)
     return signed_matching

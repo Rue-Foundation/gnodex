@@ -1,10 +1,16 @@
+import asyncio
 import functools
 import logging
 import os
 import re
 
+from datetime import datetime
+
 import bitcoin
 import sha3
+
+from dateutil.parser import parse as parse_datetime
+from dateutil.tz import tzutc
 
 try:
     from secrets import SystemRandom
@@ -24,7 +30,7 @@ def random_private_value() -> int:
 
 def validate_private_value(value: int):
     if value < 0 or value >= bitcoin.N:
-        raise ValueError('invalid EC private value {}'.format(hex(value)))
+        raise ValueError('invalid EC private value {:064x}'.format(value))
 
 
 def validate_polynomial(polynomial: int):
@@ -32,7 +38,7 @@ def validate_polynomial(polynomial: int):
         try:
             validate_private_value(coeff)
         except ValueError:
-            raise ValueError('invalid x^{} coefficient {}'.format(i, hex(coeff)))
+            raise ValueError('invalid x^{} coefficient {:064x}'.format(i, coeff))
 
 
 def validate_curve_point(point: (int, int)):
@@ -44,11 +50,52 @@ def validate_curve_point(point: (int, int)):
 
 def validate_eth_address(addr: int):
     if addr < 0 or addr >= 2**160:
-        raise ValueError('invalid Ethereum address {}'.format(hex(addr)))
+        raise ValueError('invalid Ethereum address {:040x}'.format(addr))
+
+
+def validate_signature(signature: 'rsv triplet'):
+    r, s, v = signature
+    if (any(coord < 0 or coord >= bitcoin.P for coord in (r, s)) or
+       v not in (27, 28)):
+        raise ValueError('invalid signature {}'.format(signature))
+
+
+def normalize_decryption_condition(deccond: str, return_obj: bool = False):
+    prefix = 'past '
+    if deccond.startswith(prefix):
+        try:
+            dt = parse_datetime(deccond[len(prefix):])
+        except ValueError as e:
+            raise ValueError('could not parse date for "past" condition from string "{}"'.format(deccond[len(prefix):]))
+
+        # All time values internally UTC
+        if dt.tzinfo is not None:
+            dt = dt.astimezone(tzutc())
+
+        # Strip out subsecond info and make naive
+        dt = dt.replace(microsecond=0, tzinfo=None)
+
+        if return_obj:
+            return (prefix, dt)
+
+        return prefix + dt.isoformat()
+
+    raise ValueError('invalid decryption condition {}'.format(deccond))
+
+
+async def decryption_condition_satisfied(deccond: str) -> bool:
+    prefix, obj = normalize_decryption_condition(deccond, True)
+    if prefix == 'past ':
+        while datetime.utcnow() < obj:
+            await asyncio.sleep(max(0, (obj - datetime.utcnow()).total_seconds()))
 
 
 def sequence_256_bit_values_to_bytes(sequence: tuple) -> bytes:
     return b''.join(map(functools.partial(int.to_bytes, length=32, byteorder='big'), sequence))
+
+
+def private_value_to_eth_address(private_value: int) -> int:
+    return curve_point_to_eth_address(bitcoin.fast_multiply(bitcoin.G, private_value))
 
 
 def curve_point_to_eth_address(curve_point: (int, int)) -> int:
@@ -69,7 +116,7 @@ def get_or_generate_private_value(filepath: str) -> int:
     logging.warn('could not read key from private key file {}; generating new value...'.format(filepath))
     with open(filepath, 'w') as private_key_fp:
         private_key = random_private_value()
-        private_key_fp.write(hex(private_key)+'\n')
+        private_key_fp.write('{:064x}\n'.format(private_key))
         return private_key
 
 

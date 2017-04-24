@@ -2,8 +2,9 @@ import math
 
 import sqlalchemy.types as types
 from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import scoped_session, sessionmaker, relationship
 from sqlalchemy import Column, Integer, String, Enum, ForeignKey
+from sqlalchemy.schema import UniqueConstraint
 from sqlalchemy.ext.declarative import declarative_base, declared_attr
 
 from . import util
@@ -22,7 +23,7 @@ Base = declarative_base(cls=Base)
 def init():
     global engine, Session
     engine = create_engine('sqlite:///:memory:')
-    Session = sessionmaker(engine)
+    Session = scoped_session(sessionmaker(engine))
     Base.metadata.create_all(engine)
 
 
@@ -58,6 +59,24 @@ class CurvePoint(types.TypeDecorator):
             point = tuple(int.from_bytes(value[i:i+32], byteorder='big') for i in (0, 32))
             util.validate_curve_point(point)
             return point
+
+
+class Signature(types.TypeDecorator):
+    impl = types.LargeBinary
+    python_type = tuple # rsv (int, int, int)
+
+    def process_bind_param(self, value, dialect):
+        if value is not None:
+            util.validate_signature(value)
+            return tuple(int.to_bytes(part, partsize, byteorder='big') for part, partsize in zip(value, (32, 32, 1)))
+
+    def process_result_value(self, value, dialect):
+        if value is not None:
+            if len(value) != 65:
+                raise ValueError('unexpected result value length {} bytes'.format(len(value)))
+            signature = tuple(int.from_bytes(bs, byteorder='big') for bs in (value[0:32], value[32:64], value[64:]))
+            util.validate_signature(signature)
+            return signature
 
 
 class EthAddress(types.TypeDecorator):

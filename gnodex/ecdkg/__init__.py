@@ -9,7 +9,7 @@ import sys
 
 import bitcoin
 
-from . import util, networking, ecdkg
+from . import util, networking, ecdkg, db
 
 
 def setup_argparser(parser):
@@ -19,6 +19,8 @@ def setup_argparser(parser):
                         help='Port no. to serve on (default: %(default)s)')
     parser.add_argument('--log-level', type=int, nargs='?', default=logging.INFO,
                         help='Logging level (default: %(default)s)')
+    parser.add_argument('--log-format', nargs='?', default='%(message)s',
+                        help='Logging message format (default: %(default)s)')
     parser.add_argument('--private-key-file', nargs='?', default='private.key',
                         help='File to load private key from (default: %(default)s)')
     parser.add_argument('--addresses-file', nargs='?', default='addresses.txt',
@@ -29,25 +31,27 @@ def setup_argparser(parser):
 
 
 def main(args):
-    logging.basicConfig(level=args.log_level, format='%(message)s')
+    logging.basicConfig(level=args.log_level, format=args.log_format)
 
     ecdkg.private_key = util.get_or_generate_private_value(args.private_key_file)
     own_public_key = bitcoin.fast_multiply(bitcoin.G, ecdkg.private_key)
-    own_address = util.curve_point_to_eth_address(own_public_key)
+    ecdkg.own_address = util.curve_point_to_eth_address(own_public_key)
     ecdkg.accepted_addresses = util.get_addresses(args.addresses_file)
-    ecdkg.accepted_addresses.difference_update((own_address,))
+    ecdkg.accepted_addresses.difference_update((ecdkg.own_address,))
     locations = util.get_locations(args.locations_file)
 
 
-    logging.debug('own pubkey: ({}, {})'.format(*map(hex, own_public_key)))
-    logging.info('own address: {}'.format(hex(own_address)))
+    logging.debug('own pubkey: ({0[0]:064x}, {0[1]:064x})'.format(own_public_key))
+    logging.info('own address: {:040x}'.format(ecdkg.own_address))
     if ecdkg.accepted_addresses:
         logging.info('accepted addresses: {{\n    {}\n}}'.format(
-            '\n    '.join(hex(a) for a in ecdkg.accepted_addresses)))
+            '\n    '.join('{:040x}'.format(a) for a in ecdkg.accepted_addresses)))
     else:
         logging.warn('not accepting any addresses')
 
     ssl_context = networking.set_ssl_using_key(ecdkg.private_key)
+
+    db.init()
 
 
     def shutdown(signum, frame):
@@ -62,10 +66,15 @@ def main(args):
     loop.run_until_complete(networking.server(args.host, args.port, loop=loop))
     for hostname, port in locations:
         loop.create_task(networking.attempt_to_establish_channel(hostname, port))
+    loop.create_task(networking.emit_heartbeats())
 
     try:
         loop.run_forever()
     except SystemExit:
+        pass
+    finally:
+        for task in asyncio.Task.all_tasks(loop):
+            task.cancel()
         loop.run_until_complete(loop.shutdown_asyncgens())
-        loop.stop()
+        loop.close()
         logging.info('Goodbye')

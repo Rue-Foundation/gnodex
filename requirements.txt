@@ -1,7 +1,11 @@
 bitcoin
 cryptography
+json-rpc
 parse
+psutil
 pysha3
+python-dateutil
+requests
 rlp
 merkle
 sqlalchemy
