@@ -61,7 +61,7 @@ def send_signed_matching(ssl_sock, signed_matching_rlp):
         "receive_matching",
         {'signed_matching_rlp_rpc': signed_matching_rlp},
         default_timeout=True)
-    return rlp.decode(signed_receipt_rlp, SignedReceipt)
+    return rlp.decode(signed_receipt_rlp, SignedReceipt) if signed_receipt_rlp else None
 
 
 def request_membership_verification(signed_receipt):
@@ -93,7 +93,7 @@ def request_membership_verification(signed_receipt):
                     signed_receipt.receipt.round))
             else:
                 repeat_thread = False
-                print("ORDER CONFIRMATION RECEIVED!!!")
+                print("MATCHING CONFIRMATION RECEIVED!!!")
 
 
 def send_verification_request(ssl_sock, signed_receipt_rlp):

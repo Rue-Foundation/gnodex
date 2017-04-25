@@ -19,7 +19,8 @@ def signer_service(args):
     state_dispatchers = {
         State.RECEIVE_ORDER_BATCH: Dispatcher({
             "receive_batch": server_handler.receive_order_batch}),
-        State.RECEIVE_MATCH_COLLECTION: Dispatcher({}),
+        State.RECEIVE_MATCH_COLLECTION: Dispatcher({
+            "receive_match_collection": server_handler.receive_match_collection}),
     }
     global_dispatcher = Dispatcher({})
 

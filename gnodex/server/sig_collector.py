@@ -81,11 +81,14 @@ def request_signatures(signed_rlp, commitment_rlp, sender_func):
         with ssl_sock:
             print("CONNECTED TO SIGNER")
             signature = sender_func(ssl_sock, signed_rlp)
+            if not signature or not signature.signature:
+                print("NO SIGNATURE RECEIVED")
+                continue
 
             signer_public_key = crypto.load_public_cert_key(certs.path_to('server.crt'))
 
             try:
-                crypto.verify(signer_public_key, rlp.encode(commitment_rlp), signature.signature)
+                crypto.verify(signer_public_key, commitment_rlp, signature.signature)
                 print("SIGNATURE OK!")
                 signature_collection.append(signature)
             except InvalidSignature:
@@ -118,10 +121,15 @@ def send_matches_to_signer_services():
             signed_matching_collection_rlp = rlp.encode(signed_matching_collection)
             print("SENDING MATCHING COLLECTION!")
             # Comm with signers
-            signature_collection.extend(request_signatures(
+            signer_signatures = request_signatures(
                 signed_matching_collection_rlp,
                 rlp.encode(commitment),
-                send_signed_matching_collection))
+                send_signed_matching_collection)
+            if not signer_signatures:
+                print("COULD NOT COLLECT SIGNATURES")
+                repeat_thread = True
+                continue
+            signature_collection.extend(signer_signatures)
             with server.state_lock.writer:
                 latest_match_batch = {
                     'signed_matching_collection': SignedMatchingCollection(signature_collection, matching_collection),
@@ -145,4 +153,4 @@ def send_signed_matching_collection(ssl_sock, signed_matching_collection_rlp: Si
         ssl_sock,
         "receive_match_collection",
         {"signed_match_collection_rlp_rpc": signed_matching_collection_rlp})
-    return rlp.decode(signature_rlp, Signature)
+    return rlp.decode(signature_rlp, Signature) if signature_rlp else None

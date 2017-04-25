@@ -12,7 +12,7 @@ def receive_matching(signed_matching_rlp_rpc):
     signed_matching = rlp.decode(signed_matching_rlp, SignedMatching)
     print("MATCHING RECEIVED")
     server.matchings.append(signed_matching)
-    receipt_round = len(server.batches)
+    receipt_round = len(server.matched_batches)
     # Create Receipt
     matching_hash = crypto.sha256_utf8(signed_matching_rlp)
     receipt = Receipt(receipt_round, matching_hash)
