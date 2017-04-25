@@ -8,6 +8,7 @@ from ..models import *
 from ..util import crypto, merkle_helper
 from ..util.ssl_sock_helper import ssl_connect
 from ..util.rpc import rpc_call_rlp
+from .matcher_handler import choose_optimal_matching
 
 _static_signers = [
     ('localhost', 31338),
@@ -141,6 +142,7 @@ def send_matches_to_signer_services():
                 server.matchings = list()
                 # TODO: Transition to RETRIEVE_DKG_PK_FOR_MATCHINGS
                 server.current_state = server.State.CHOOSE_OPTIMAL_MATCHING
+            choose_optimal_matching()
 
         else:
             with server.state_lock.writer:

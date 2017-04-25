@@ -56,3 +56,57 @@ def return_matching_confirmation(signed_receipt_rlp_rpc):
         return rpc_response(rlp.encode(chain))
     except InvalidSignature:
         print("RECEIPT SIGNATURE VERIFICATION FAILED!!")
+
+def choose_optimal_matching():
+    matched_batch = server.matched_batches[-1]
+    signed_matching_collection = matched_batch["signed_matching_collection"]
+    matching_collection = signed_matching_collection.matching_collection
+    match, volume, utility = None, 0, 0
+    batch = server.batches[-1]["signed_batch"].batch
+    order_ids = [signed_order.order.id for signed_order in batch.orders]
+    for signed_matching in matching_collection.matchings:
+        matching = signed_matching.matching
+        _volume, _utility, valid = 0, 0, True
+        buy, sell = {}, {}
+        try:
+            for route in matching.routes:
+                if route.left_order not in order_ids or route.right_order not in order_ids:
+                    raise ValueError("Invalid Matching -- Unknown Order Inserted")
+
+                if route.left_order not in sell:
+                    sell[route.left_order] = route.left_amount
+                else:
+                    sell[route.left_order] += route.left_amount
+                if route.right_order not in buy:
+                    buy[route.right_order] = route.left_amount
+                else:
+                    buy[route.right_order] += route.left_amount
+
+                volume += route.left_amount
+
+            for signed_order in batch.orders:
+                order = signed_order.order
+                if order.buy_amount < buy[order.id]:
+                    raise ValueError(
+                        "Invalid Matching -- Order %s overflown (%s, %s)" %
+                        (order.id, order.buy_amount, buy[order.id]))
+                elif order.sell_amount < sell[order.id]:
+                    raise ValueError(
+                        "Invalid Matching -- Order %s oversold (%s, %s)" %
+                        (order.id, order.sell_amount, sell[order.id]))
+                elif order.sell_amount*sell[order.id] != buy[order.id]*order.buy_amount:
+                    raise ValueError(
+                        "Invalid Matching -- Order %s price not kept (%s, %s)" %
+                        (order.id, order.sell_amount/order.buy_amount, buy[order.id]/sell[order.id]))
+
+        except ValueError:
+            continue
+
+        if _volume > volume or (_volume == volume and _utility < utility):
+            match, volume, utility = signed_matching, _volume, _utility
+
+    print("CHOSEN MATCHING: %s volume, %s utility" % (volume, utility))
+
+    with server.state_lock.writer:
+        matched_batch["optimal_choice"] = match
+        server.current_state = server.State.RECEIVE_ORDERS

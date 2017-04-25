@@ -115,7 +115,7 @@ def process_batch(signed_batch):
                 supply = sell[i].sell_amount if i < len(sell) else None
                 demand = buy[j].buy_amount if j < len(buy) else None
 
-            routes.append(Route(seller.id, buyer.id, sold_amount))
+            routes.append(Route(seller.id, sold_amount, buyer.id))
             print('%s -> %s: %s %s' % (seller.id, buyer.id, sold_amount, seller.sell_token))
 
         if not p:
