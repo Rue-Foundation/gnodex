@@ -358,6 +358,10 @@ async def attempt_to_establish_channel(host: str, port: int, *,
             logging.debug('(c) server eth address {:040x} not accepted'.format(srvethaddr))
             return
 
+        if srvethaddr in channels and 'writer' in channels[srvethaddr]:
+            logging.info('(c) already connected to {:040x}; ending connection attempt'.format(srvethaddr))
+            return
+
         writer.write(b'DKG ')
 
         noncebytes = await asyncio.wait_for(reader.read(32), timeout)
