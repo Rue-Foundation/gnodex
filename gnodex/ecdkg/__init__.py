@@ -49,8 +49,6 @@ def main(args):
     else:
         logging.warn('not accepting any addresses')
 
-    ssl_context = networking.set_ssl_using_key(ecdkg.private_key)
-
     db.init()
 
 

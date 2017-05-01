@@ -19,6 +19,8 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ec
 from jsonrpc import JSONRPCResponseManager
 
+from .. import certs
+from ..util import ssl_context
 from . import util, ecdkg, rpc_interface, db
 
 
@@ -55,53 +57,11 @@ class HTTPRequest(BaseHTTPRequestHandler):
             classname=self.__class__.__name__,
             desc='\n '.join('{}={}'.format(attr, ('\n  '+' '*len(attr)).join(filter(bool, str(getattr(self, attr, None)).split('\n')))) for attr in ('command', 'path', 'headers')))
 
-
-ssl_context = None
+ssl_server_ctx = ssl_context.get_pfs_ssl_server_context(certs.path_to('server.crt'), certs.path_to('server.key'))
+ssl_client_ctx = ssl_context.get_pfs_ssl_client_context(certs.path_to('server.crt'))
 channels = {}
 default_dispatcher = rpc_interface.create_dispatcher()
 response_futures = collections.OrderedDict()
-
-
-def set_ssl_using_key(private_key: int) -> ssl.SSLContext:
-    global ssl_context
-
-    private_key_obj = ec.derive_private_key(private_key, ec.SECP256K1(), default_backend())
-
-    certificate = x509.CertificateBuilder(
-        ).subject_name(x509.Name([])
-        ).issuer_name(x509.Name([])
-        ).serial_number(x509.random_serial_number()
-        ).not_valid_before(datetime.datetime.utcnow()
-        ).not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=10000)
-        ).public_key(private_key_obj.public_key()
-        ).sign(private_key_obj, hashes.SHA256(), default_backend())
-
-    certificate_tempfile = tempfile.NamedTemporaryFile(delete=False)
-    private_key_tempfile = tempfile.NamedTemporaryFile(delete=False)
-
-    certificate_tempfile.write(certificate.public_bytes(serialization.Encoding.PEM))
-    priv_key_byte_count = private_key_tempfile.write(private_key_obj.private_bytes(encoding=serialization.Encoding.PEM, format=serialization.PrivateFormat.TraditionalOpenSSL, encryption_algorithm=serialization.NoEncryption()))
-
-    certificate_tempfile.close()
-    private_key_tempfile.close()
-
-    ssl_context = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-    ssl_context.load_cert_chain(certificate_tempfile.name, private_key_tempfile.name)
-
-    with open(private_key_tempfile.name, 'wb') as f:
-        f.write(os.urandom(priv_key_byte_count)) # shred
-
-    os.remove(certificate_tempfile.name)
-    os.remove(private_key_tempfile.name)
-
-    ssl_context.set_ciphers(':'.join(cipher['name'] for cipher in ssl_context.get_ciphers() if cipher['name'].startswith('ECDHE-ECDSA')))
-
-
-def get_public_key_from_ssl_socket(sslsocket: ssl.SSLSocket) -> (int, int):
-    pubnums = x509.load_der_x509_certificate(sslsocket.getpeercert(binary_form=True), default_backend()).public_key().public_numbers()
-    point = (pubnums.x, pubnums.y)
-    util.validate_curve_point(point)
-    return point
 
 
 async def json_lines_with_timeout(reader: asyncio.StreamReader, timeout: 'seconds' = DEFAULT_TIMEOUT):
@@ -233,6 +193,43 @@ async def broadcast_jsonrpc_call_on_all_channels(method_name: str, *args,
     return res
 
 
+async def determine_address_via_nonce(reader: asyncio.StreamReader,
+                                      writer: asyncio.StreamWriter,
+                                      timeout: 'seconds' = DEFAULT_TIMEOUT) -> int:
+    # TODO: Make a nonce registry for extra security
+    nonce = util.random.randrange(2**256)
+    noncebytes = nonce.to_bytes(32, byteorder='big')
+    logging.debug('sending nonce {:064x}'.format(nonce))
+    writer.write(nonce.to_bytes(32, byteorder='big'))
+
+    rsv_bytes = await asyncio.wait_for(reader.read(65), timeout)
+    r, s, v = (int.from_bytes(b, byteorder='big') for b in (rsv_bytes[0:32], rsv_bytes[32:64], rsv_bytes[64:]))
+    logging.debug('received signature rsv ({:064x}, {:064x}, {:02x})'.format(r, s, v))
+
+    try:
+        clipubkey = bitcoin.ecdsa_raw_recover(noncebytes, (v, r, s))
+    except ValueError:
+        logging.debug('malformed signature')
+        return None
+
+    if clipubkey:
+        cliethaddr = util.curve_point_to_eth_address(clipubkey)
+        logging.debug('got client address: {:040x}'.format(cliethaddr))
+        return cliethaddr
+
+
+async def respond_to_nonce_with_signature(reader: asyncio.StreamReader,
+                                          writer: asyncio.StreamWriter,
+                                          timeout: 'seconds' = DEFAULT_TIMEOUT):
+    noncebytes = await asyncio.wait_for(reader.read(32), timeout)
+    nonce = int.from_bytes(noncebytes, byteorder='big')
+    logging.debug('got nonce: {:064x}'.format(nonce))
+
+    v, r, s = bitcoin.ecdsa_raw_sign(noncebytes, ecdkg.private_key)
+    logging.debug('sending nonce signature rsv ({:064x}, {:064x}, {:02x})'.format(r, s, v))
+    writer.write(r.to_bytes(32, 'big') + s.to_bytes(32, 'big') + v.to_bytes(1, 'big'))
+
+
 ################################################################################
 
 async def emit_heartbeats():
@@ -258,25 +255,8 @@ async def server(host: str, port: int, *,
             protocol_indicator = await asyncio.wait_for(reader.read(4), timeout)
 
             if protocol_indicator == b'DKG ':
-                nonce = util.random.randrange(2**256)
-                noncebytes = nonce.to_bytes(32, byteorder='big')
-                logging.debug('(s) sending nonce {:064x}'.format(nonce))
-                writer.write(nonce.to_bytes(32, byteorder='big'))
-
-                rsv_bytes = await asyncio.wait_for(reader.read(65), timeout)
-                r, s, v = (int.from_bytes(b, byteorder='big') for b in (rsv_bytes[0:32], rsv_bytes[32:64], rsv_bytes[64:]))
-                logging.debug('(s) received signature rsv ({:02x}, {:064x}, {:064x})'.format(r, s, v))
-
-                try:
-                    clipubkey = bitcoin.ecdsa_raw_recover(noncebytes, (v, r, s))
-                except ValueError:
-                    clipubkey = False # I would have used None here but pybitcointools uses False for malformed signatures
-
-                if clipubkey:
-                    cliethaddr = util.curve_point_to_eth_address(clipubkey)
-                    logging.debug('(s) got client address: {:040x}'.format(cliethaddr))
-                else:
-                    cliethaddr = None
+                await respond_to_nonce_with_signature(reader, writer, timeout)
+                cliethaddr = await determine_address_via_nonce(reader, writer, timeout)
 
                 if cliethaddr is None:
                     logging.debug('(s) could not verify client signature; closing connection')
@@ -316,7 +296,7 @@ async def server(host: str, port: int, *,
 
     logging.debug('(s) serving on {}:{}'.format(host, port))
     await asyncio.start_server(handle_connection,
-                               host, port, ssl=ssl_context, loop=loop)
+                               host, port, ssl=ssl_server_ctx, loop=loop)
 
 
 
@@ -329,7 +309,7 @@ async def attempt_to_establish_channel(host: str, port: int, *,
     logging.debug('(c) attempting to connect to {}:{}'.format(host, port))
     for i in range(num_tries):
         try:
-            reader, writer = await asyncio.open_connection(host, port, ssl=ssl_context)
+            reader, writer = await asyncio.open_connection(host, port, ssl=ssl_client_ctx)
         except OSError as e:
             if e.errno == 111 or '[Errno 111]' in str(e): # connection refused
                 if i < num_tries - 1:
@@ -348,25 +328,23 @@ async def attempt_to_establish_channel(host: str, port: int, *,
         return
 
     try:
-        sslsocket = writer.get_extra_info('ssl_object')
-        logging.debug('(c) socket cipher: {}'.format(sslsocket.cipher()))
-        srvpubkey = get_public_key_from_ssl_socket(sslsocket)
-        srvethaddr = util.curve_point_to_eth_address(srvpubkey)
-        logging.debug('(c) server eth address: {:040x}'.format(srvethaddr))
+        writer.write(b'DKG ')
+
+        srvethaddr = await determine_address_via_nonce(reader, writer, timeout)
+
+        if srvethaddr is None:
+            logging.info('(c) could not determine server address; closing connection...')
+            return
 
         if srvethaddr not in ecdkg.accepted_addresses:
             logging.debug('(c) server eth address {:040x} not accepted'.format(srvethaddr))
             return
 
-        writer.write(b'DKG ')
+        if srvethaddr in channels and 'writer' in channels[srvethaddr]:
+            logging.info('(c) already connected to {:040x}; ending connection attempt'.format(srvethaddr))
+            return
 
-        noncebytes = await asyncio.wait_for(reader.read(32), timeout)
-        nonce = int.from_bytes(noncebytes, byteorder='big')
-        logging.debug('(c) got nonce: {:064x}'.format(nonce))
-
-        v, r, s = bitcoin.ecdsa_raw_sign(noncebytes, ecdkg.private_key)
-        logging.debug('(c) sending nonce signature rsv ({:02x}, {:064x}, {:064x})'.format(r, s, v))
-        writer.write(r.to_bytes(32, 'big') + s.to_bytes(32, 'big') + v.to_bytes(1, 'big'))
+        await respond_to_nonce_with_signature(reader, writer, timeout)
 
         await establish_channel(srvethaddr, reader, writer, srvipaddr)
     finally:
