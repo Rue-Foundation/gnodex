@@ -40,6 +40,10 @@ def request_batch():
                     continue
                 print("RECEIVED BATCH")
                 signed_matching = batch_processor.process_batch(signed_batch)
+                if not signed_matching:
+                    print("CANNOT MATCH ORDERS YET")
+                    repeat_thread = True
+                    continue
                 # TODO Encrypt matching with DKG
                 print("SENDING MATCHING")
                 signed_receipt = send_signed_matching(ssl_sock, rlp.encode(signed_matching))
