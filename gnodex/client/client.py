@@ -47,9 +47,21 @@ def trade_client(args):
             order = None
             id = int.from_bytes(os.urandom(8), byteorder='big')
             if (parsed['operation'] == 'BUY'):
-                order = Order(id, parsed['from_token'], parsed['from_amount'], parsed['to_token'], parsed['to_amount'])
+                order = Order(id,
+                              parsed['from_token'],
+                              parsed['from_amount'],
+                              parsed['to_token'],
+                              parsed['to_amount'],
+                              -1,
+                              -1)
             elif (parsed['operation'] == 'SELL'):
-                order = Order(id, parsed['to_token'], parsed['to_amount'], parsed['from_token'], parsed['from_amount'])
+                order = Order(id,
+                              parsed['to_token'],
+                              parsed['to_amount'],
+                              parsed['from_token'],
+                              parsed['from_amount'],
+                              -1,
+                              -1)
             else:
                 continue
 

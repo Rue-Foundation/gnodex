@@ -10,6 +10,8 @@ class Order(rlp.Serializable):
         ('buy_amount', BigEndianInt(8)),
         ('sell_token', raw),
         ('sell_amount', BigEndianInt(8)),
+        ('block_created', BigEndianInt(8)),
+        ('block_expires', BigEndianInt(8)),
     ]
 
 
