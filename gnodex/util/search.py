@@ -1,5 +1,4 @@
 # Search algorithm utility
-import bisect
 
 
 def ternary_search(lo, hi, f):

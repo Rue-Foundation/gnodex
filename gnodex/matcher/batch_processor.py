@@ -86,11 +86,8 @@ def process_batch(signed_batch):
     """
 
     # Create routes
-    orders = [bids, asks]
     routes = list()
-    for p in range(0, 2):
-        sell = orders[0]
-        buy = orders[1]
+    for sell, buy in [(bids, asks), (asks, bids)]:
         i = 0
         j = 0
         supply = sell[0].sell_amount
@@ -117,9 +114,6 @@ def process_batch(signed_batch):
 
             routes.append(Route(seller.id, sold_amount, buyer.id))
             print('%s -> %s: %s %s' % (seller.id, buyer.id, sold_amount, seller.sell_token))
-
-        if not p:
-            orders.reverse()
 
     # Create Matching
     matching = Matching(routes, signed_batch_hash)
