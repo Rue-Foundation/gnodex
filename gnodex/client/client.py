@@ -90,7 +90,7 @@ def send_signed_order(ssl_sock, signed_order_rlp: SignedOrder):
     return rlp.decode(signed_receipt_rlp, SignedReceipt)
 
 
-def request_membership_verification(signed_receipt: SignedReceipt):
+def request_membership_verification(signed_receipt):
     repeat_thread = True
 
     while repeat_thread:

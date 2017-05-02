@@ -37,6 +37,7 @@ def master_state_service(args):
     }
     global_dispatcher = Dispatcher({
         "return_confirmation": client_handler.return_confirmation,
+        "return_matching_confirmation": matcher_handler.return_matching_confirmation,
     })
 
     # Accept connections and start handling them in own thread
