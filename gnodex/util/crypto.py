@@ -76,7 +76,7 @@ def encrypt(message: bytes, enckey: (int, int)) -> bytes:
     num_chunks = len(message) // 32 + (1 if num_trunc_bytes > 0 else 0)
     c = b''.join((
             int.from_bytes(message[32*i:32*(i+1)].ljust(32, b'\0'), 'big') ^
-            int.from_bytes(sha3.keccak_256(iv + i.to_bytes(32, 'big')).digest(), 'big')
+            int.from_bytes(sha3.keccak_256(iv + i.to_bytes(32, 'big') + kE).digest(), 'big')
         ).to_bytes(32, byteorder='big') for i in range(num_chunks))
 
 
@@ -92,7 +92,7 @@ def encrypt(message: bytes, enckey: (int, int)) -> bytes:
             d) # 32 byte message authentication code (MAC)
 
 
-def decrypt(ciphertext: bytes, deckey: int) -> bytes:
+def decrypt(ciphertext: bytes, deckey: int, foo=False) -> bytes:
     util.validate_private_value(deckey)
     R = tuple(int.from_bytes(ciphertext[i:i+32], byteorder='big') for i in (0, 32))
     util.validate_curve_point(R)
@@ -100,17 +100,17 @@ def decrypt(ciphertext: bytes, deckey: int) -> bytes:
     num_trunc_bytes = ord(ciphertext[64:65])
     iv = ciphertext[65:97]
     c = ciphertext[97:-32]
+
     if len(c) % 32 != 0:
         raise ValueError('enciphered message not properly aligned')
-    num_chunks = len(c) // 32
-    d = ciphertext[-32:]
 
     kEkM = sha3.keccak_256(S[0].to_bytes(32, byteorder='big')).digest()
     kE, kM = kEkM[0:16], kEkM[16:32]
 
+    num_chunks = len(c) // 32
     message = b''.join((
             int.from_bytes(c[32*i:32*(i+1)], 'big') ^
-            int.from_bytes(sha3.keccak_256(iv + i.to_bytes(32, 'big')).digest(), 'big')
+            int.from_bytes(sha3.keccak_256(iv + i.to_bytes(32, 'big') + kE).digest(), 'big')
         ).to_bytes(32, byteorder='big') for i in range(num_chunks))
 
     if num_trunc_bytes > 0:
@@ -119,7 +119,11 @@ def decrypt(ciphertext: bytes, deckey: int) -> bytes:
         if padding != b'\0' * num_trunc_bytes:
             raise ValueError('invalid padding')
 
+    d = ciphertext[-32:]
     if d != sha3.keccak_256(kM + message).digest():
         raise ValueError('message authentication code does not match')
+
+    if foo:
+        return int.from_bytes(sha3.keccak_256(message).digest(), 'big')
 
     return message
