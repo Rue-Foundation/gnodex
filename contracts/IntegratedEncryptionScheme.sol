@@ -84,11 +84,14 @@ library IntegratedEncryptionScheme {
         // d = ciphertext[-32:]
         assembly {
             kEkM := mload(add(ciphertext, mload(ciphertext)))
+            // HACK: Format slice as a bytes object and reassign name ciphertext
+            mstore(add(ciphertext, 97), sub(mload(ciphertext), 129))
+            ciphertext := add(ciphertext, 97)
         }
 
-        // if d != sha3.keccak_256(kM + message).digest():
+        // if d != sha3.keccak_256(kM + c).digest():
         //     raise ValueError('message authentication code does not match')
-        if(kEkM != uint(keccak256(kM, message)))
+        if(kEkM != uint(keccak256(kM, ciphertext)))
             throw;
 
         // return message

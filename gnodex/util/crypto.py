@@ -84,7 +84,7 @@ def encrypt(message: bytes, enckey: (int, int)) -> bytes:
     # Unlike SHA-1 and SHA-2, Keccak does not have the length-extension weakness,
     # hence does not need the HMAC nested construction. Instead, MAC computation
     # can be performed by simply prepending the message with the key.
-    d = sha3.keccak_256(kM + message).digest()
+    d = sha3.keccak_256(kM + c).digest()
     return (b''.join(x.to_bytes(32, byteorder='big') for x in R) + # 64 byte ephemeral key
             bytes((num_trunc_bytes,)) + # 1 byte truncation descriptor
             iv + # 32 byte initialization vector
@@ -120,7 +120,7 @@ def decrypt(ciphertext: bytes, deckey: int, foo=False) -> bytes:
             raise ValueError('invalid padding')
 
     d = ciphertext[-32:]
-    if d != sha3.keccak_256(kM + message).digest():
+    if d != sha3.keccak_256(kM + c).digest():
         raise ValueError('message authentication code does not match')
 
     if foo:
