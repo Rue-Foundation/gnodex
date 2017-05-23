@@ -113,13 +113,51 @@
     }
   },
   "compilation": {
+    "backend": {
+      "$ref": "compilation.backends.SolcStandardJSON"
+    },
+    "backends": {
+      "SolcCombinedJSON": {
+        "class": "populus.compilation.backends.SolcCombinedJSONBackend",
+        "settings": {
+          "optimize": true,
+          "output_values": [
+            "abi",
+            "bin",
+            "bin-runtime",
+            "devdoc",
+            "metadata",
+            "userdoc"
+          ]
+        }
+      },
+      "SolcStandardJSON": {
+        "class": "populus.compilation.backends.SolcStandardJSONBackend",
+        "settings": {
+          "optimizer": {
+            "enabled": true
+          },
+          "outputSelection": {
+            "*": {
+              "*": [
+                "abi",
+                "evm.bytecode.object",
+                "evm.bytecode.linkReferences",
+                "evm.deployedBytecode.object",
+                "evm.deployedBytecode.linkReferences",
+                "devdoc",
+                "metadata",
+                "userdoc"
+              ]
+            }
+          }
+        }
+      }
+    },
     "contracts_source_dir": "./contracts",
-    "settings": {
-      "optimize": true,
-      "import_remappings": [
-        "github.com/androlo/standard-contracts/contracts/src/=contracts/"
-      ]
-    }
+    "import_remappings": [
+      "github.com/androlo/standard-contracts/contracts/src/=contracts/"
+    ]
   },
   "contracts": {
     "backends": {
@@ -144,7 +182,7 @@
       }
     }
   },
-  "version": "3",
+  "version": "4",
   "web3": {
     "GethIPC": {
       "provider": {
