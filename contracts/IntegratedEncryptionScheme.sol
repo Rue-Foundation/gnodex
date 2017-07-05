@@ -52,12 +52,12 @@ library IntegratedEncryptionScheme {
         // num_chunks = len(c) // 32
         // message = b''.join((
         //         int.from_bytes(c[32*i:32*(i+1)], 'big') ^
-        //         int.from_bytes(sha3.keccak_256(iv + i.to_bytes(32, 'big') + kE).digest(), 'big')
+        //         int.from_bytes(sha3.keccak_256(kE + iv + i.to_bytes(32, 'big')).digest(), 'big')
         //     ).to_bytes(32, byteorder='big') for i in range(num_chunks))
         bytes memory message = new bytes(ciphertext.length - 129);
         for(uint i = 0; i < message.length / 32; ++i) {
             uint off = 0x20 + i * 32;
-            uint blockCipher = uint(keccak256(iv, i, kE));
+            uint blockCipher = uint(keccak256(kE, iv, i));
             assembly {
                 mstore(add(message, off), xor(
                     mload(add(ciphertext, add(97, off))),

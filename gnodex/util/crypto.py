@@ -76,7 +76,7 @@ def encrypt(message: bytes, enckey: (int, int)) -> bytes:
     num_chunks = len(message) // 32 + (1 if num_trunc_bytes > 0 else 0)
     c = b''.join((
             int.from_bytes(message[32*i:32*(i+1)].ljust(32, b'\0'), 'big') ^
-            int.from_bytes(sha3.keccak_256(iv + i.to_bytes(32, 'big') + kE).digest(), 'big')
+            int.from_bytes(sha3.keccak_256(kE + iv + i.to_bytes(32, 'big')).digest(), 'big')
         ).to_bytes(32, byteorder='big') for i in range(num_chunks))
 
 
@@ -110,7 +110,7 @@ def decrypt(ciphertext: bytes, deckey: int, foo=False) -> bytes:
     num_chunks = len(c) // 32
     message = b''.join((
             int.from_bytes(c[32*i:32*(i+1)], 'big') ^
-            int.from_bytes(sha3.keccak_256(iv + i.to_bytes(32, 'big') + kE).digest(), 'big')
+            int.from_bytes(sha3.keccak_256(kE + iv + i.to_bytes(32, 'big')).digest(), 'big')
         ).to_bytes(32, byteorder='big') for i in range(num_chunks))
 
     if num_trunc_bytes > 0:
